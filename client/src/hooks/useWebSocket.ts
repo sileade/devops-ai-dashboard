@@ -10,9 +10,11 @@ export interface UseWebSocketOptions {
   onMessage?: (message: WSMessage) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
-  onError?: (error: Event) => void;
+  onError?: (error: string) => void;
   autoReconnect?: boolean;
   reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+  enabled?: boolean;
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
@@ -22,15 +24,44 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onDisconnect,
     onError,
     autoReconnect = true,
-    reconnectInterval = 3000,
+    reconnectInterval = 5000,
+    maxReconnectAttempts = 5,
+    enabled = true,
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const isConnectingRef = useRef(false);
 
   const connect = useCallback(() => {
+    // Don't connect if disabled or already connecting
+    if (!enabled || isConnectingRef.current) {
+      return;
+    }
+
+    // Don't reconnect if max attempts reached
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log("Max WebSocket reconnect attempts reached, stopping");
+      setConnectionError("Unable to establish WebSocket connection after multiple attempts");
+      return;
+    }
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {
+        // Ignore close errors
+      }
+      wsRef.current = null;
+    }
+
+    isConnectingRef.current = true;
+
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -38,9 +69,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     try {
       const ws = new WebSocket(wsUrl);
 
+      // Set a connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.log("WebSocket connection timeout");
+          ws.close();
+        }
+      }, 10000);
+
       ws.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log("WebSocket connected");
         setIsConnected(true);
+        setConnectionError(null);
+        reconnectAttemptsRef.current = 0;
+        isConnectingRef.current = false;
         onConnect?.();
       };
 
@@ -50,34 +93,50 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           setLastMessage(message);
           onMessage?.(message);
         } catch (error) {
-          console.error("Failed to parse WebSocket message:", error);
+          console.warn("Failed to parse WebSocket message:", error);
         }
       };
 
-      ws.onclose = () => {
-        console.log("WebSocket disconnected");
+      ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        console.log("WebSocket disconnected", event.code, event.reason);
         setIsConnected(false);
+        isConnectingRef.current = false;
         onDisconnect?.();
 
-        // Auto-reconnect
-        if (autoReconnect) {
+        // Auto-reconnect with exponential backoff
+        if (autoReconnect && enabled && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          const delay = reconnectInterval * Math.pow(1.5, reconnectAttemptsRef.current);
+          reconnectAttemptsRef.current++;
+          console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+          
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log("Attempting to reconnect...");
             connect();
-          }, reconnectInterval);
+          }, delay);
         }
       };
 
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        onError?.(error);
+      ws.onerror = () => {
+        // WebSocket error events don't contain useful information
+        // The actual error will be handled by onclose
+        console.warn("WebSocket connection error - server may not support WebSocket");
+        isConnectingRef.current = false;
+        
+        // Only call onError callback with a meaningful message
+        const errorMessage = "WebSocket connection failed - real-time updates unavailable";
+        setConnectionError(errorMessage);
+        onError?.(errorMessage);
       };
 
       wsRef.current = ws;
     } catch (error) {
-      console.error("Failed to create WebSocket:", error);
+      console.warn("Failed to create WebSocket:", error);
+      isConnectingRef.current = false;
+      const errorMessage = error instanceof Error ? error.message : "Failed to create WebSocket";
+      setConnectionError(errorMessage);
+      onError?.(errorMessage);
     }
-  }, [onMessage, onConnect, onDisconnect, onError, autoReconnect, reconnectInterval]);
+  }, [onMessage, onConnect, onDisconnect, onError, autoReconnect, reconnectInterval, maxReconnectAttempts, enabled]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -86,45 +145,69 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
 
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.close();
+      } catch {
+        // Ignore close errors
+      }
       wsRef.current = null;
     }
+    
+    setIsConnected(false);
+    isConnectingRef.current = false;
   }, []);
 
   const send = useCallback((data: unknown) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
+      return true;
     }
+    return false;
   }, []);
 
   const subscribe = useCallback((channel: string) => {
-    send({ action: "subscribe", channel });
+    return send({ action: "subscribe", channel });
   }, [send]);
 
   const unsubscribe = useCallback((channel: string) => {
-    send({ action: "unsubscribe", channel });
+    return send({ action: "unsubscribe", channel });
   }, [send]);
 
-  useEffect(() => {
-    connect();
+  const resetReconnect = useCallback(() => {
+    reconnectAttemptsRef.current = 0;
+    setConnectionError(null);
+  }, []);
 
-    return () => {
+  useEffect(() => {
+    if (enabled) {
+      // Delay initial connection to avoid race conditions
+      const initTimeout = setTimeout(() => {
+        connect();
+      }, 100);
+      
+      return () => {
+        clearTimeout(initTimeout);
+        disconnect();
+      };
+    } else {
       disconnect();
-    };
-  }, [connect, disconnect]);
+    }
+  }, [enabled]); // Only depend on enabled, not connect/disconnect to avoid loops
 
   return {
     isConnected,
     lastMessage,
+    connectionError,
     send,
     subscribe,
     unsubscribe,
     connect,
     disconnect,
+    resetReconnect,
   };
 }
 
-// Hook for specific message types
+// Hook for specific message types with graceful degradation
 export function useContainerUpdates(
   onUpdate?: (containers: unknown[]) => void
 ) {
@@ -138,6 +221,8 @@ export function useContainerUpdates(
         onUpdate?.(payload);
       }
     },
+    // Disable auto-reconnect for secondary hooks to avoid multiple connections
+    maxReconnectAttempts: 3,
   });
 
   return containers;
@@ -155,6 +240,7 @@ export function useMetricsUpdates(
         onUpdate?.(message.payload);
       }
     },
+    maxReconnectAttempts: 3,
   });
 
   return metrics;
@@ -178,6 +264,7 @@ export function useLogStream(
         onLog?.(payload.source, payload.logs);
       }
     },
+    maxReconnectAttempts: 3,
   });
 
   return logs;
@@ -207,6 +294,7 @@ export function useAlerts(
         onAlert?.(payload);
       }
     },
+    maxReconnectAttempts: 3,
   });
 
   return alerts;
