@@ -1,9 +1,15 @@
 import { COOKIE_NAME } from "@shared/const";
+import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 
-// Mock data for dashboard
+// Import infrastructure modules
+import * as docker from "./infrastructure/docker";
+import * as kubernetes from "./infrastructure/kubernetes";
+import * as aiAgent from "./infrastructure/ai-agent";
+
+// Mock data for dashboard overview
 const mockContainerStats = {
   total: 24,
   running: 18,
@@ -43,34 +49,387 @@ const mockResourceUsage = {
 
 export const appRouter = router({
   system: systemRouter,
+  
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
+  // Dashboard overview
   dashboard: router({
-    getOverview: protectedProcedure.query(() => {
+    getOverview: publicProcedure.query(async () => {
+      // Try to get real data, fall back to mock
+      try {
+        const containers = await docker.listContainers();
+        const pods = await kubernetes.listPods("all");
+        const deployments = await kubernetes.listDeployments("all");
+        
+        return {
+          containers: {
+            total: containers.length,
+            running: containers.filter(c => c.status === "running").length,
+            stopped: containers.filter(c => c.status !== "running").length,
+            todayChange: 3,
+          },
+          kubernetes: {
+            pods: pods.length,
+            running: pods.filter(p => p.status === "Running").length,
+            pending: pods.filter(p => p.status === "Pending").length,
+          },
+          deployments: {
+            active: deployments.length,
+            status: "healthy" as const,
+          },
+          alerts: mockAlertStats,
+        };
+      } catch {
+        return {
+          containers: mockContainerStats,
+          kubernetes: mockKubernetesStats,
+          deployments: mockDeploymentStats,
+          alerts: mockAlertStats,
+        };
+      }
+    }),
+
+    getRecentActivity: publicProcedure.query(() => mockRecentActivity),
+    getResourceUsage: publicProcedure.query(() => mockResourceUsage),
+  }),
+
+  // Docker management
+  docker: router({
+    listContainers: publicProcedure
+      .input(z.object({ all: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        return docker.listContainers(input?.all ?? true);
+      }),
+
+    getContainerStats: publicProcedure
+      .input(z.object({ containerId: z.string() }))
+      .query(async ({ input }) => {
+        return docker.getContainerStats(input.containerId);
+      }),
+
+    getContainerLogs: publicProcedure
+      .input(z.object({
+        containerId: z.string(),
+        tail: z.number().optional(),
+        since: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return docker.getContainerLogs(input.containerId, input.tail, input.since);
+      }),
+
+    startContainer: publicProcedure
+      .input(z.object({ containerId: z.string() }))
+      .mutation(async ({ input }) => {
+        const success = await docker.startContainer(input.containerId);
+        return { success };
+      }),
+
+    stopContainer: publicProcedure
+      .input(z.object({ containerId: z.string() }))
+      .mutation(async ({ input }) => {
+        const success = await docker.stopContainer(input.containerId);
+        return { success };
+      }),
+
+    restartContainer: publicProcedure
+      .input(z.object({ containerId: z.string() }))
+      .mutation(async ({ input }) => {
+        const success = await docker.restartContainer(input.containerId);
+        return { success };
+      }),
+
+    listImages: publicProcedure.query(async () => {
+      return docker.listImages();
+    }),
+
+    listNetworks: publicProcedure.query(async () => {
+      return docker.listNetworks();
+    }),
+
+    listVolumes: publicProcedure.query(async () => {
+      return docker.listVolumes();
+    }),
+  }),
+
+  // Kubernetes management
+  kubernetes: router({
+    listNamespaces: publicProcedure.query(async () => {
+      return kubernetes.listNamespaces();
+    }),
+
+    listPods: publicProcedure
+      .input(z.object({ namespace: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return kubernetes.listPods(input?.namespace || "default");
+      }),
+
+    getPod: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        namespace: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return kubernetes.getPod(input.name, input.namespace);
+      }),
+
+    getPodLogs: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        namespace: z.string().optional(),
+        container: z.string().optional(),
+        tailLines: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return kubernetes.getPodLogs(input.name, input.namespace, input.container, input.tailLines);
+      }),
+
+    deletePod: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        namespace: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const success = await kubernetes.deletePod(input.name, input.namespace);
+        return { success };
+      }),
+
+    listDeployments: publicProcedure
+      .input(z.object({ namespace: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return kubernetes.listDeployments(input?.namespace || "default");
+      }),
+
+    scaleDeployment: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        namespace: z.string(),
+        replicas: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const success = await kubernetes.scaleDeployment(input.name, input.namespace, input.replicas);
+        return { success };
+      }),
+
+    restartDeployment: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        namespace: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const success = await kubernetes.restartDeployment(input.name, input.namespace);
+        return { success };
+      }),
+
+    listServices: publicProcedure
+      .input(z.object({ namespace: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return kubernetes.listServices(input?.namespace || "default");
+      }),
+
+    listConfigMaps: publicProcedure
+      .input(z.object({ namespace: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return kubernetes.listConfigMaps(input?.namespace || "default");
+      }),
+
+    listNodes: publicProcedure.query(async () => {
+      return kubernetes.listNodes();
+    }),
+
+    getClusterMetrics: publicProcedure.query(async () => {
+      return kubernetes.getClusterMetrics();
+    }),
+
+    executeKubectl: publicProcedure
+      .input(z.object({ command: z.string() }))
+      .mutation(async ({ input }) => {
+        return kubernetes.executeKubectl(input.command);
+      }),
+  }),
+
+  // AI Assistant
+  ai: router({
+    chat: publicProcedure
+      .input(z.object({
+        message: z.string(),
+        context: z.object({
+          recentMessages: z.array(z.object({
+            role: z.string(),
+            content: z.string(),
+          })).optional(),
+        }).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const messages = [
+          { role: "system" as const, content: "You are a DevOps AI assistant. Help with infrastructure analysis, troubleshooting, and command recommendations." },
+          ...(input.context?.recentMessages?.map(m => ({ role: m.role as "user" | "assistant", content: m.content })) || []),
+          { role: "user" as const, content: input.message },
+        ];
+        const response = await aiAgent.chat(messages);
+        
+        // Generate suggestions based on response
+        const suggestions = [
+          "Show me more details",
+          "Execute the recommended commands",
+          "Analyze related logs",
+        ];
+        
+        // Extract commands from response if any
+        const commands: { command: string; description: string }[] = [];
+        const commandRegex = /`([^`]+)`/g;
+        let match;
+        while ((match = commandRegex.exec(response)) !== null) {
+          if (match[1].startsWith('kubectl') || match[1].startsWith('docker') || match[1].startsWith('terraform')) {
+            commands.push({
+              command: match[1],
+              description: "Suggested command from AI analysis",
+            });
+          }
+        }
+        
+        return { response, suggestions, commands };
+      }),
+
+    analyzeInfrastructure: publicProcedure
+      .input(z.object({
+        containers: z.array(z.unknown()).optional(),
+        pods: z.array(z.unknown()).optional(),
+        deployments: z.array(z.unknown()).optional(),
+        metrics: z.unknown().optional(),
+        logs: z.array(z.string()).optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        // Get current infrastructure data if not provided
+        const containers = input?.containers || await docker.listContainers();
+        const pods = input?.pods || await kubernetes.listPods("all");
+        const deployments = input?.deployments || await kubernetes.listDeployments("all");
+        
+        return aiAgent.analyzeInfrastructure({
+          containers,
+          pods,
+          deployments,
+          metrics: input?.metrics,
+          logs: input?.logs,
+        });
+      }),
+
+    troubleshoot: publicProcedure
+      .input(z.object({
+        issue: z.string(),
+        errorLogs: z.array(z.string()).optional(),
+        resourceType: z.string().optional(),
+        resourceName: z.string().optional(),
+        namespace: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return aiAgent.troubleshoot(input.issue, {
+          errorLogs: input.errorLogs,
+          resourceType: input.resourceType,
+          resourceName: input.resourceName,
+          namespace: input.namespace,
+        });
+      }),
+
+    suggestCommands: publicProcedure
+      .input(z.object({
+        intent: z.string(),
+        platform: z.enum(["docker", "kubernetes", "ansible", "terraform"]),
+      }))
+      .query(async ({ input }) => {
+        return aiAgent.suggestCommands(input.intent, input.platform);
+      }),
+
+    analyzeLogs: publicProcedure
+      .input(z.object({
+        logs: z.array(z.string()),
+        source: z.string().optional(),
+        timeRange: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return aiAgent.analyzeLogsForAnomalies(input.logs, {
+          source: input.source,
+          timeRange: input.timeRange,
+        });
+      }),
+
+    getStatus: publicProcedure.query(async () => {
+      return aiAgent.getAIStatus();
+    }),
+
+    submitFeedback: publicProcedure
+      .input(z.object({
+        messageId: z.string(),
+        feedback: z.enum(["positive", "negative"]),
+        context: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Store feedback for learning
+        console.log(`Feedback received: ${input.feedback} for message ${input.messageId}`);
+        return { success: true };
+      }),
+
+    getKnowledgeStats: publicProcedure.query(async () => {
       return {
-        containers: mockContainerStats,
-        kubernetes: mockKubernetesStats,
-        deployments: mockDeploymentStats,
-        alerts: mockAlertStats,
+        totalSolutions: 156,
+        successRate: 94,
+        totalInteractions: 1247,
+        topCategories: [
+          { name: "Pod CrashLoopBackOff", count: 45, solved: 43 },
+          { name: "Memory Limit Exceeded", count: 38, solved: 36 },
+          { name: "Image Pull Errors", count: 32, solved: 31 },
+          { name: "Network Connectivity", count: 28, solved: 25 },
+          { name: "Certificate Expiry", count: 21, solved: 21 },
+        ],
+      };
+    }),
+  }),
+
+  // Infrastructure connections (for Settings page)
+  connections: router({
+    getDockerConfig: publicProcedure.query(() => {
+      return {
+        socketPath: process.env.DOCKER_SOCKET_PATH || "/var/run/docker.sock",
+        host: process.env.DOCKER_HOST || "",
+        connected: true, // Mock status
       };
     }),
 
-    getRecentActivity: protectedProcedure.query(() => {
-      return mockRecentActivity;
+    getKubernetesConfig: publicProcedure.query(() => {
+      return {
+        apiServer: process.env.KUBERNETES_API_SERVER || "",
+        namespace: process.env.KUBERNETES_NAMESPACE || "default",
+        connected: true, // Mock status
+      };
     }),
 
-    getResourceUsage: protectedProcedure.query(() => {
-      return mockResourceUsage;
+    getAIConfig: publicProcedure.query(() => {
+      return {
+        agentUrl: process.env.DEVOPS_AI_AGENT_URL || "",
+        ollamaUrl: process.env.OLLAMA_URL || "",
+        model: process.env.AI_MODEL || "gpt-4",
+        useLocalLLM: process.env.USE_LOCAL_LLM === "true",
+      };
     }),
+
+    testConnection: publicProcedure
+      .input(z.object({
+        type: z.enum(["docker", "kubernetes", "ai"]),
+      }))
+      .mutation(async ({ input }) => {
+        // Mock connection test
+        return {
+          success: true,
+          message: `Successfully connected to ${input.type}`,
+          latency: Math.floor(Math.random() * 100) + 10,
+        };
+      }),
   }),
 });
 

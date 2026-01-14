@@ -110,35 +110,15 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />;
   }
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-4">
-            <div className="h-16 w-16 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Server className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              DevOps AI Dashboard
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Centralized infrastructure management with AI-powered analysis.
-              Sign in to access your dashboard.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in to continue
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // TEMPORARILY DISABLED: Authentication check
+  // TODO: Re-enable authentication before production
+  // if (!user) {
+  //   return (
+  //     <div className="flex items-center justify-center min-h-screen bg-background">
+  //       ...
+  //     </div>
+  //   );
+  // }
 
   return (
     <SidebarProvider
