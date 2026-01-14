@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Bot,
   Send,
@@ -23,8 +24,10 @@ import {
   ThumbsDown,
   Copy,
   Play,
+  Plus,
+  MessageSquare,
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Streamdown } from "streamdown";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -39,11 +42,10 @@ interface Message {
   feedbackGiven?: "positive" | "negative";
 }
 
-const initialMessages: Message[] = [
-  {
-    id: "1",
-    role: "assistant",
-    content: `Hello! I'm your DevOps AI Assistant, powered by the **devops-ai-agent** knowledge base. I can help you with:
+const welcomeMessage: Message = {
+  id: "welcome",
+  role: "assistant",
+  content: `Hello! I'm your DevOps AI Assistant, powered by the **devops-ai-agent** knowledge base. I can help you with:
 
 - **Infrastructure Analysis**: Analyze your Docker, Kubernetes, and Terraform configurations
 - **Troubleshooting**: Diagnose issues with containers, pods, and deployments (with self-learning from past solutions)
@@ -52,14 +54,13 @@ const initialMessages: Message[] = [
 - **Automated Actions**: Execute approved remediation steps
 
 I learn from every interaction to provide better solutions over time. How can I help you today?`,
-    timestamp: new Date(),
-    suggestions: [
-      "Analyze my Kubernetes cluster health",
-      "Why is my pod in CrashLoopBackOff?",
-      "Recommend security improvements",
-    ],
-  },
-];
+  timestamp: new Date(),
+  suggestions: [
+    "Analyze my Kubernetes cluster health",
+    "Why is my pod in CrashLoopBackOff?",
+    "Recommend security improvements",
+  ],
+};
 
 const quickActions = [
   { icon: AlertTriangle, label: "Diagnose Issues", prompt: "Analyze current infrastructure for potential issues and suggest fixes" },
@@ -70,10 +71,12 @@ const quickActions = [
 ];
 
 export default function AIAssistant() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("chat");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // tRPC queries
@@ -81,18 +84,59 @@ export default function AIAssistant() {
   const chatMutation = trpc.ai.chat.useMutation();
   const feedbackMutation = trpc.ai.submitFeedback.useMutation();
   const knowledgeStats = trpc.ai.getKnowledgeStats.useQuery();
+  const clearHistoryMutation = trpc.ai.clearHistory.useMutation();
+  const createSessionMutation = trpc.ai.createSession.useMutation();
 
+  // Get or create session on mount
+  const sessionQuery = trpc.ai.getSession.useQuery(
+    { sessionId: sessionId || undefined },
+    { enabled: !sessionId }
+  );
+
+  // Load chat history when session is available
+  const historyQuery = trpc.ai.getChatHistory.useQuery(
+    { sessionId: sessionId || "" },
+    { enabled: !!sessionId }
+  );
+
+  // Initialize session
+  useEffect(() => {
+    if (sessionQuery.data?.sessionId && !sessionId) {
+      setSessionId(sessionQuery.data.sessionId);
+    }
+  }, [sessionQuery.data, sessionId]);
+
+  // Load history when available
+  useEffect(() => {
+    if (historyQuery.data && historyQuery.data.length > 0) {
+      const loadedMessages: Message[] = historyQuery.data.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+        suggestions: m.suggestions,
+        commands: m.commands,
+        feedbackGiven: m.feedbackGiven as "positive" | "negative" | undefined,
+      }));
+      setMessages([welcomeMessage, ...loadedMessages]);
+      setIsLoadingHistory(false);
+    } else if (historyQuery.isSuccess) {
+      setIsLoadingHistory(false);
+    }
+  }, [historyQuery.data, historyQuery.isSuccess]);
+
+  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const handleSend = async (content: string = input) => {
+  const handleSend = useCallback(async (content: string = input) => {
     if (!content.trim()) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}`,
       role: "user",
       content: content.trim(),
       timestamp: new Date(),
@@ -105,6 +149,7 @@ export default function AIAssistant() {
     try {
       const response = await chatMutation.mutateAsync({
         message: content.trim(),
+        sessionId: sessionId || undefined,
         context: {
           recentMessages: messages.slice(-5).map(m => ({
             role: m.role,
@@ -113,8 +158,13 @@ export default function AIAssistant() {
         },
       });
 
+      // Update session ID if returned
+      if (response.sessionId && !sessionId) {
+        setSessionId(response.sessionId);
+      }
+
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: response.messageId || `assistant-${Date.now()}`,
         role: "assistant",
         content: response.response,
         timestamp: new Date(),
@@ -127,7 +177,7 @@ export default function AIAssistant() {
       console.error("AI chat error:", error);
       // Fallback to mock response
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `assistant-${Date.now()}`,
         role: "assistant",
         content: `I've analyzed your request: "${content.trim()}"
 
@@ -155,7 +205,7 @@ Would you like me to elaborate on any of these points?`,
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [input, sessionId, messages, chatMutation]);
 
   const handleFeedback = async (messageId: string, feedback: "positive" | "negative") => {
     const message = messages.find(m => m.id === messageId);
@@ -194,8 +244,29 @@ Would you like me to elaborate on any of these points?`,
     // In real implementation, this would execute via WebSocket
   };
 
-  const handleClearHistory = () => {
-    setMessages(initialMessages);
+  const handleClearHistory = async () => {
+    if (sessionId) {
+      try {
+        await clearHistoryMutation.mutateAsync({ sessionId });
+        toast.success("Chat history cleared");
+      } catch (error) {
+        console.error("Failed to clear history:", error);
+      }
+    }
+    setMessages([welcomeMessage]);
+  };
+
+  const handleNewChat = async () => {
+    try {
+      const result = await createSessionMutation.mutateAsync({});
+      setSessionId(result.sessionId);
+      setMessages([welcomeMessage]);
+      toast.success("Started new chat session");
+    } catch (error) {
+      console.error("Failed to create new session:", error);
+      // Fallback: just reset messages locally
+      setMessages([welcomeMessage]);
+    }
   };
 
   return (
@@ -220,6 +291,10 @@ Would you like me to elaborate on any of these points?`,
               <Cpu className="h-3 w-3 mr-1" />
               {aiStatus.data?.available ? `${aiStatus.data.provider} Active` : "Connecting..."}
             </Badge>
+            <Button variant="outline" size="sm" onClick={handleNewChat}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Chat
+            </Button>
             <Button variant="outline" size="sm" onClick={handleClearHistory}>
               <Trash2 className="h-4 w-4 mr-2" />
               Clear
@@ -243,130 +318,131 @@ Would you like me to elaborate on any of these points?`,
             <Card className="flex-1 flex flex-col overflow-hidden">
               <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                 <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex gap-3 ${
-                        message.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      {message.role === "assistant" && (
-                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                          <Bot className="h-4 w-4 text-primary" />
-                        </div>
-                      )}
+                  {isLoadingHistory && sessionId ? (
+                    <div className="space-y-4">
+                      <Skeleton className="h-20 w-3/4" />
+                      <Skeleton className="h-12 w-1/2 ml-auto" />
+                      <Skeleton className="h-24 w-3/4" />
+                    </div>
+                  ) : (
+                    messages.map((message) => (
                       <div
-                        className={`max-w-[80%] rounded-lg p-4 ${
-                          message.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-secondary"
+                        key={message.id}
+                        className={`flex gap-3 ${
+                          message.role === "user" ? "justify-end" : "justify-start"
                         }`}
                       >
-                        {message.role === "assistant" ? (
-                          <Streamdown>{message.content}</Streamdown>
-                        ) : (
-                          <p className="text-sm">{message.content}</p>
+                        {message.role === "assistant" && (
+                          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
                         )}
-                        
-                        {/* Command suggestions */}
-                        {message.commands && message.commands.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
-                            <p className="text-xs font-medium text-muted-foreground mb-2">
-                              Suggested Commands:
-                            </p>
-                            {message.commands.map((cmd, idx) => (
-                              <div 
-                                key={idx} 
-                                className="bg-background/50 rounded-lg p-3 font-mono text-sm"
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <code className="text-primary">{cmd.command}</code>
-                                  <div className="flex gap-1">
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
-                                      className="h-6 w-6 p-0"
-                                      onClick={() => handleCopyCommand(cmd.command)}
-                                    >
-                                      <Copy className="h-3 w-3" />
-                                    </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
-                                      className="h-6 w-6 p-0"
-                                      onClick={() => handleExecuteCommand(cmd.command)}
-                                    >
-                                      <Play className="h-3 w-3" />
-                                    </Button>
+                        <div
+                          className={`max-w-[80%] rounded-lg p-4 ${
+                            message.role === "user"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary"
+                          }`}
+                        >
+                          {message.role === "assistant" ? (
+                            <Streamdown>{message.content}</Streamdown>
+                          ) : (
+                            <p className="text-sm">{message.content}</p>
+                          )}
+                          
+                          {/* Command suggestions */}
+                          {message.commands && message.commands.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">
+                                Suggested Commands:
+                              </p>
+                              {message.commands.map((cmd, idx) => (
+                                <div 
+                                  key={idx} 
+                                  className="bg-background/50 rounded-lg p-3 font-mono text-sm"
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <code className="text-primary">{cmd.command}</code>
+                                    <div className="flex gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => handleCopyCommand(cmd.command)}
+                                      >
+                                        <Copy className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-green-500"
+                                        onClick={() => handleExecuteCommand(cmd.command)}
+                                      >
+                                        <Play className="h-3 w-3" />
+                                      </Button>
+                                    </div>
                                   </div>
+                                  <p className="text-xs text-muted-foreground">{cmd.description}</p>
                                 </div>
-                                <p className="text-xs text-muted-foreground">{cmd.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          )}
 
-                        {/* Quick suggestions */}
-                        {message.suggestions && (
-                          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border/50">
-                            {message.suggestions.map((suggestion, idx) => (
+                          {/* Quick suggestions */}
+                          {message.suggestions && message.suggestions.length > 0 && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {message.suggestions.map((suggestion, idx) => (
+                                <Button
+                                  key={idx}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => handleSend(suggestion)}
+                                >
+                                  {suggestion}
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Feedback buttons for assistant messages */}
+                          {message.role === "assistant" && message.id !== "welcome" && (
+                            <div className="mt-3 pt-3 border-t border-border/30 flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Was this helpful?</span>
                               <Button
-                                key={idx}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs h-7"
-                                onClick={() => handleSend(suggestion)}
+                                variant="ghost"
+                                size="icon"
+                                className={`h-6 w-6 ${message.feedbackGiven === "positive" ? "text-green-500" : ""}`}
+                                onClick={() => handleFeedback(message.id, "positive")}
+                                disabled={!!message.feedbackGiven}
                               >
-                                {suggestion}
+                                <ThumbsUp className="h-3 w-3" />
                               </Button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Feedback buttons for assistant messages */}
-                        {message.role === "assistant" && message.id !== "1" && (
-                          <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
-                            <span className="text-xs text-muted-foreground">Was this helpful?</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={`h-7 w-7 p-0 ${message.feedbackGiven === "positive" ? "text-green-500" : ""}`}
-                              onClick={() => handleFeedback(message.id, "positive")}
-                              disabled={!!message.feedbackGiven}
-                            >
-                              <ThumbsUp className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={`h-7 w-7 p-0 ${message.feedbackGiven === "negative" ? "text-red-500" : ""}`}
-                              onClick={() => handleFeedback(message.id, "negative")}
-                              disabled={!!message.feedbackGiven}
-                            >
-                              <ThumbsDown className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                      {message.role === "user" && (
-                        <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                          <span className="text-xs font-medium text-primary-foreground">
-                            You
-                          </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={`h-6 w-6 ${message.feedbackGiven === "negative" ? "text-red-500" : ""}`}
+                                onClick={() => handleFeedback(message.id, "negative")}
+                                disabled={!!message.feedbackGiven}
+                              >
+                                <ThumbsDown className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))
+                  )}
+                  
                   {isLoading && (
                     <div className="flex gap-3">
                       <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Bot className="h-4 w-4 text-primary" />
+                        <Bot className="h-4 w-4 text-primary animate-pulse" />
                       </div>
                       <div className="bg-secondary rounded-lg p-4">
                         <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 bg-primary rounded-full animate-bounce" />
-                          <div className="h-2 w-2 bg-primary rounded-full animate-bounce [animation-delay:0.1s]" />
-                          <div className="h-2 w-2 bg-primary rounded-full animate-bounce [animation-delay:0.2s]" />
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">Analyzing...</span>
                         </div>
                       </div>
                     </div>
@@ -375,24 +451,23 @@ Would you like me to elaborate on any of these points?`,
               </ScrollArea>
 
               <div className="p-4 border-t">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSend();
-                  }}
-                  className="flex gap-2"
-                >
+                <div className="flex gap-2">
                   <Input
+                    placeholder="Ask about your infrastructure..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask about your infrastructure..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
                     disabled={isLoading}
-                    className="flex-1"
                   />
-                  <Button type="submit" disabled={isLoading || !input.trim()}>
+                  <Button onClick={() => handleSend()} disabled={isLoading || !input.trim()}>
                     <Send className="h-4 w-4" />
                   </Button>
-                </form>
+                </div>
               </div>
             </Card>
           </TabsContent>
@@ -405,101 +480,63 @@ Would you like me to elaborate on any of these points?`,
                   Knowledge Base Statistics
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-3 gap-4">
-                  <Card className="bg-secondary/50">
-                    <CardContent className="pt-6">
-                      <div className="text-3xl font-bold text-primary">
-                        {knowledgeStats.data?.totalSolutions || 156}
-                      </div>
-                      <p className="text-sm text-muted-foreground">Learned Solutions</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-secondary/50">
-                    <CardContent className="pt-6">
-                      <div className="text-3xl font-bold text-green-500">
-                        {knowledgeStats.data?.successRate || 94}%
-                      </div>
-                      <p className="text-sm text-muted-foreground">Success Rate</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-secondary/50">
-                    <CardContent className="pt-6">
-                      <div className="text-3xl font-bold text-blue-500">
-                        {knowledgeStats.data?.totalInteractions || 1247}
-                      </div>
-                      <p className="text-sm text-muted-foreground">Total Interactions</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div>
-                  <h3 className="font-medium mb-3">Top Problem Categories</h3>
-                  <div className="space-y-2">
-                    {(knowledgeStats.data?.topCategories || [
-                      { name: "Pod CrashLoopBackOff", count: 45, solved: 43 },
-                      { name: "Memory Limit Exceeded", count: 38, solved: 36 },
-                      { name: "Image Pull Errors", count: 32, solved: 31 },
-                      { name: "Network Connectivity", count: 28, solved: 25 },
-                      { name: "Certificate Expiry", count: 21, solved: 21 },
-                    ]).map((cat: { name: string; count: number; solved: number }, idx: number) => (
-                      <div key={idx} className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>{cat.name}</span>
-                            <span className="text-muted-foreground">
-                              {cat.solved}/{cat.count} solved
-                            </span>
-                          </div>
-                          <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-primary rounded-full"
-                              style={{ width: `${(cat.solved / cat.count) * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-secondary rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-primary">
+                      {knowledgeStats.data?.totalSolutions || 0}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Total Solutions</p>
+                  </div>
+                  <div className="bg-secondary rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-green-500">
+                      {knowledgeStats.data?.successRate || 0}%
+                    </p>
+                    <p className="text-sm text-muted-foreground">Success Rate</p>
+                  </div>
+                  <div className="bg-secondary rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-blue-500">
+                      {knowledgeStats.data?.totalInteractions || 0}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Total Interactions</p>
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="font-medium mb-3">Recent Learnings</h3>
-                  <div className="space-y-2">
-                    {[
-                      { problem: "Redis connection timeout", solution: "Increase connection pool size", time: "2 hours ago" },
-                      { problem: "Nginx 502 errors", solution: "Adjust upstream keepalive", time: "5 hours ago" },
-                      { problem: "Disk pressure on nodes", solution: "Configure log rotation", time: "1 day ago" },
-                    ].map((learning, idx) => (
-                      <div key={idx} className="p-3 bg-secondary/50 rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-medium">{learning.problem}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Solution: {learning.solution}
-                            </p>
-                          </div>
-                          <span className="text-xs text-muted-foreground">{learning.time}</span>
+                <h3 className="font-medium mb-3">Top Problem Categories</h3>
+                <div className="space-y-3">
+                  {knowledgeStats.data?.topCategories?.map((category, idx) => (
+                    <div key={idx} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="w-6 h-6 p-0 flex items-center justify-center">
+                          {idx + 1}
+                        </Badge>
+                        <span className="text-sm">{category.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {category.solved}/{category.count} solved
+                        </span>
+                        <div className="w-24 h-2 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-green-500 rounded-full"
+                            style={{ width: `${(category.solved / category.count) * 100}%` }}
+                          />
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-
-                <Button variant="outline" className="w-full" onClick={() => knowledgeStats.refetch()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh Statistics
-                </Button>
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
 
+      {/* Right sidebar */}
       <div className="w-80 space-y-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
               <Zap className="h-4 w-4" />
               Quick Actions
             </CardTitle>
@@ -509,11 +546,12 @@ Would you like me to elaborate on any of these points?`,
               <Button
                 key={idx}
                 variant="outline"
-                className="w-full justify-start h-auto py-3"
+                className="w-full justify-start"
                 onClick={() => handleSend(action.prompt)}
+                disabled={isLoading}
               >
-                <action.icon className="h-4 w-4 mr-3 text-muted-foreground" />
-                <span className="text-sm">{action.label}</span>
+                <action.icon className="h-4 w-4 mr-2" />
+                {action.label}
               </Button>
             ))}
           </CardContent>
@@ -521,74 +559,76 @@ Would you like me to elaborate on any of these points?`,
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
               AI Capabilities
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Log analysis & anomaly detection
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Infrastructure troubleshooting
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Command recommendations
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Self-learning from feedback
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Knowledge base integration
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                Automated remediation
-              </li>
-            </ul>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Log analysis & anomaly detection</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Infrastructure troubleshooting</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Command recommendations</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Self-learning from feedback</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Knowledge base integration</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span>Automated remediation</span>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
               <History className="h-4 w-4" />
               Recent Topics
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {["Pod scaling issues", "Memory optimization", "SSL certificate renewal", "Database connection pooling"].map(
-                (topic, idx) => (
-                  <button
-                    key={idx}
-                    className="w-full text-left text-sm p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground"
-                    onClick={() => handleSend(`Tell me more about ${topic}`)}
-                  >
-                    {topic}
-                  </button>
-                )
-              )}
-            </div>
+          <CardContent className="space-y-2">
+            {["Pod scaling issues", "Memory optimization", "SSL certificate renewal", "Database connection pooling"].map((topic, idx) => (
+              <Button
+                key={idx}
+                variant="ghost"
+                className="w-full justify-start text-sm h-auto py-2"
+                onClick={() => handleSend(`Tell me about ${topic}`)}
+              >
+                <MessageSquare className="h-3 w-3 mr-2 text-muted-foreground" />
+                {topic}
+              </Button>
+            ))}
           </CardContent>
         </Card>
 
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Brain className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Self-Learning Active</span>
-            </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Brain className="h-4 w-4" />
+              Self-Learning Active
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <p className="text-xs text-muted-foreground">
-              The AI learns from your feedback and successful resolutions to improve future recommendations.
+              The AI learns from your feedback and successful troubleshooting sessions to improve future recommendations.
             </p>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-green-500">Learning enabled</span>
+            </div>
           </CardContent>
         </Card>
       </div>

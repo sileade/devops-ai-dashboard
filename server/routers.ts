@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import * as chatDb from "./db";
 
 // Import infrastructure modules
 import * as docker from "./infrastructure/docker";
@@ -256,9 +257,73 @@ export const appRouter = router({
 
   // AI Assistant
   ai: router({
+    // Get or create a chat session
+    getSession: publicProcedure
+      .input(z.object({
+        sessionId: z.string().optional(),
+        userOpenId: z.string().optional(),
+      }).optional())
+      .query(async ({ input, ctx }) => {
+        const userOpenId = ctx.user?.openId || input?.userOpenId || null;
+        const result = await chatDb.getOrCreateChatSession(userOpenId, input?.sessionId);
+        return result;
+      }),
+
+    // Get chat history for a session
+    getChatHistory: publicProcedure
+      .input(z.object({
+        sessionId: z.string(),
+        limit: z.number().optional().default(100),
+      }))
+      .query(async ({ input }) => {
+        const messages = await chatDb.getChatHistoryBySessionId(input.sessionId, input.limit);
+        return messages.map(m => ({
+          id: m.id.toString(),
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          timestamp: m.createdAt,
+          suggestions: m.suggestions || undefined,
+          commands: m.commands || undefined,
+          feedbackGiven: m.feedback || undefined,
+        }));
+      }),
+
+    // Get all sessions for user
+    getUserSessions: publicProcedure
+      .input(z.object({
+        userOpenId: z.string().optional(),
+      }).optional())
+      .query(async ({ input, ctx }) => {
+        const userOpenId = ctx.user?.openId || input?.userOpenId;
+        if (!userOpenId) return [];
+        return chatDb.getUserChatSessions(userOpenId);
+      }),
+
+    // Create new chat session
+    createSession: publicProcedure
+      .input(z.object({
+        userOpenId: z.string().optional(),
+      }).optional())
+      .mutation(async ({ input, ctx }) => {
+        const userOpenId = ctx.user?.openId || input?.userOpenId || null;
+        const result = await chatDb.createNewChatSession(userOpenId);
+        return { sessionId: result.sessionId };
+      }),
+
+    // Clear chat history
+    clearHistory: publicProcedure
+      .input(z.object({
+        sessionId: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const success = await chatDb.clearChatHistory(input.sessionId);
+        return { success };
+      }),
+
     chat: publicProcedure
       .input(z.object({
         message: z.string(),
+        sessionId: z.string().optional(),
         context: z.object({
           recentMessages: z.array(z.object({
             role: z.string(),
@@ -266,7 +331,26 @@ export const appRouter = router({
           })).optional(),
         }).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const userOpenId = ctx.user?.openId || null;
+        
+        // Get or create session
+        const { sessionId, conversationId } = await chatDb.getOrCreateChatSession(userOpenId, input.sessionId);
+        
+        // Save user message to database
+        await chatDb.saveChatMessage({
+          conversationId,
+          role: "user",
+          content: input.message,
+        });
+
+        // Update session title if this is the first message
+        const history = await chatDb.getChatHistory(conversationId, 2);
+        if (history.length <= 1) {
+          const title = input.message.length > 50 ? input.message.substring(0, 50) + "..." : input.message;
+          await chatDb.updateSessionTitle(sessionId, title);
+        }
+
         const messages = [
           { role: "system" as const, content: "You are a DevOps AI assistant. Help with infrastructure analysis, troubleshooting, and command recommendations." },
           ...(input.context?.recentMessages?.map(m => ({ role: m.role as "user" | "assistant", content: m.content })) || []),
@@ -293,8 +377,23 @@ export const appRouter = router({
             });
           }
         }
+
+        // Save assistant response to database
+        const assistantMessageId = await chatDb.saveChatMessage({
+          conversationId,
+          role: "assistant",
+          content: response,
+          suggestions,
+          commands,
+        });
         
-        return { response, suggestions, commands };
+        return { 
+          response, 
+          suggestions, 
+          commands, 
+          sessionId,
+          messageId: assistantMessageId?.toString(),
+        };
       }),
 
     analyzeInfrastructure: publicProcedure
@@ -370,7 +469,11 @@ export const appRouter = router({
         context: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        // Store feedback for learning
+        // Store feedback in database
+        const messageIdNum = parseInt(input.messageId, 10);
+        if (!isNaN(messageIdNum)) {
+          await chatDb.updateMessageFeedback(messageIdNum, input.feedback);
+        }
         console.log(`Feedback received: ${input.feedback} for message ${input.messageId}`);
         return { success: true };
       }),

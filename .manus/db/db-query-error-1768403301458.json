@@ -1,0 +1,20 @@
+{
+  "query": "SHOW TABLES LIKE 'chat%'; DESCRIBE chat_messages; DESCRIBE chat_sessions;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute SHOW TABLES LIKE 'chat%'; DESCRIBE chat_messages; DESCRIBE chat_sessions;",
+  "returncode": 1,
+  "logs": [
+    "Tables_in_bVoJhS4CeCN2GuJxoMncsM (chat%)",
+    "chat_conversations",
+    "chat_messages",
+    "Field\tType\tNull\tKey\tDefault\tExtra",
+    "id\tint(11)\tNO\tPRI\tNULL\tauto_increment",
+    "conversationId\tint(11)\tNO\t\tNULL\t",
+    "role\tenum('user','assistant','system')\tNO\t\tNULL\t",
+    "content\ttext\tNO\t\tNULL\t",
+    "suggestions\tjson\tYES\t\tNULL\t",
+    "commands\tjson\tYES\t\tNULL\t",
+    "feedback\tenum('positive','negative')\tYES\t\tNULL\t",
+    "createdAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP",
+    "ERROR 1146 (42S02) at line 1: Table 'bvojhs4cecn2gujxomncsm.chat_sessions' doesn't exist"
+  ]
+}

@@ -137,3 +137,34 @@ export const savedCommands = mysqlTable("saved_commands", {
 
 export type SavedCommand = typeof savedCommands.$inferSelect;
 export type InsertSavedCommand = typeof savedCommands.$inferInsert;
+
+// AI Chat messages for persistent history
+// Note: Uses conversationId as foreign key to chat_sessions
+export const chatMessages = mysqlTable("chat_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  role: mysqlEnum("role", ["user", "assistant", "system"]).notNull(),
+  content: text("content").notNull(),
+  suggestions: json("suggestions").$type<string[]>(),
+  commands: json("commands").$type<{ command: string; description: string }[]>(),
+  feedback: mysqlEnum("feedback", ["positive", "negative"]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+// Chat sessions for grouping messages
+export const chatSessions = mysqlTable("chat_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+  userId: int("userId"),
+  userOpenId: varchar("userOpenId", { length: 64 }),
+  title: varchar("title", { length: 255 }).default("New Chat"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type InsertChatSession = typeof chatSessions.$inferInsert;

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `chat_sessions` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `sessionId` varchar(64) NOT NULL UNIQUE,\n  `userId` int,\n  `userOpenId` varchar(64),\n  `title` varchar(255) DEFAULT 'New Chat',\n  `isActive` boolean DEFAULT true NOT NULL,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `chat_sessions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS `chat_sessions` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `sessionId` varchar(64) NOT NULL UNIQUE,\n  `userId` int,\n  `userOpenId` varchar(64),\n  `title` varchar(255) DEFAULT 'New Chat',\n  `isActive` boolean DEFAULT true NOT NULL,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `chat_sessions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 182
+}
