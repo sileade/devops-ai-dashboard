@@ -1,10 +1,47 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+
+// Mock data for dashboard
+const mockContainerStats = {
+  total: 24,
+  running: 18,
+  stopped: 6,
+  todayChange: 3,
+};
+
+const mockKubernetesStats = {
+  pods: 47,
+  running: 45,
+  pending: 2,
+};
+
+const mockDeploymentStats = {
+  active: 12,
+  status: "healthy" as const,
+};
+
+const mockAlertStats = {
+  total: 3,
+  critical: 1,
+  warnings: 2,
+};
+
+const mockRecentActivity = [
+  { id: "1", type: "deploy", message: "Deployed api-server v2.3.1 to production", timestamp: new Date(Date.now() - 2 * 60 * 1000) },
+  { id: "2", type: "scale", message: "Scaled web-frontend from 3 to 5 replicas", timestamp: new Date(Date.now() - 15 * 60 * 1000) },
+  { id: "3", type: "error", message: "Pod crash loop detected in worker-queue", timestamp: new Date(Date.now() - 32 * 60 * 1000) },
+  { id: "4", type: "restart", message: "Restarted database-primary container", timestamp: new Date(Date.now() - 60 * 60 * 1000) },
+];
+
+const mockResourceUsage = {
+  cpu: { used: 67, total: 100, unit: "%" },
+  memory: { used: 12.4, total: 32, unit: "GB" },
+  storage: { used: 234, total: 500, unit: "GB" },
+};
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -17,12 +54,24 @@ export const appRouter = router({
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  dashboard: router({
+    getOverview: protectedProcedure.query(() => {
+      return {
+        containers: mockContainerStats,
+        kubernetes: mockKubernetesStats,
+        deployments: mockDeploymentStats,
+        alerts: mockAlertStats,
+      };
+    }),
+
+    getRecentActivity: protectedProcedure.query(() => {
+      return mockRecentActivity;
+    }),
+
+    getResourceUsage: protectedProcedure.query(() => {
+      return mockResourceUsage;
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
