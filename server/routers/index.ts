@@ -9,3 +9,4 @@ export { dockerRouter } from "./docker";
 export { kubernetesRouter } from "./kubernetes";
 export { aiRouter } from "./ai";
 export { connectionsRouter } from "./connections";
+export { notificationsRouter } from "./notifications";

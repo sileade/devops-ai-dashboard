@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { generalLimiter, burstLimiter, authLimiter, aiLimiter, infrastructureLimiter } from "./rateLimit";
+import { initializeWebSocket } from "./websocket";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -31,6 +32,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  
+  // Initialize WebSocket server
+  initializeWebSocket(server);
   
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -86,6 +90,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    console.log(`WebSocket server initialized on same port`);
     console.log(`Rate limiting enabled: General (100/15min), Auth (10/15min), AI (30/15min), Infrastructure (20/15min)`);
   });
 }

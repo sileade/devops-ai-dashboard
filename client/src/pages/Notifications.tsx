@@ -18,30 +18,41 @@ import {
   Mail,
   MessageSquare,
   Smartphone,
+  Wifi,
+  WifiOff,
+  Cpu,
+  HardDrive,
+  Container,
+  Layers,
+  Server,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { useRealTimeUpdates, type Alert } from "@/hooks/useRealTimeUpdates";
+import { LiveStatusIndicator } from "@/components/LiveStatusIndicator";
+import { trpc } from "@/lib/trpc";
 
-interface Notification {
-  id: string;
-  type: "info" | "warning" | "error" | "success";
-  title: string;
-  message: string;
-  timestamp: string;
-  read: boolean;
-  source: string;
+// Alert category icons
+const alertCategoryIcons = {
+  pod_crash: Layers,
+  high_cpu: Cpu,
+  high_memory: HardDrive,
+  container_stopped: Container,
+  deployment_failed: Server,
+};
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
 }
-
-const mockNotifications: Notification[] = [
-  { id: "1", type: "error", title: "Pod CrashLoopBackOff", message: "Pod worker-queue-9e8d7c6b5-jkl78 is in CrashLoopBackOff state", timestamp: "5 minutes ago", read: false, source: "Kubernetes" },
-  { id: "2", type: "warning", title: "High Memory Usage", message: "Container api-server is using 85% of allocated memory", timestamp: "15 minutes ago", read: false, source: "Docker" },
-  { id: "3", type: "success", title: "Deployment Completed", message: "Deployment web-frontend successfully rolled out", timestamp: "1 hour ago", read: false, source: "Kubernetes" },
-  { id: "4", type: "info", title: "Terraform Plan Ready", message: "New terraform plan available for aws-production workspace", timestamp: "2 hours ago", read: true, source: "Terraform" },
-  { id: "5", type: "warning", title: "Certificate Expiring", message: "SSL certificate for api.example.com expires in 14 days", timestamp: "3 hours ago", read: true, source: "System" },
-  { id: "6", type: "error", title: "Ansible Playbook Failed", message: "Playbook configure-nginx failed on 2 hosts", timestamp: "5 hours ago", read: true, source: "Ansible" },
-  { id: "7", type: "success", title: "Backup Completed", message: "Database backup completed successfully", timestamp: "6 hours ago", read: true, source: "System" },
-  { id: "8", type: "info", title: "New Version Available", message: "Kubernetes cluster can be upgraded to v1.28.0", timestamp: "1 day ago", read: true, source: "Kubernetes" },
-];
 
 interface NotificationSettings {
   email: boolean;
@@ -66,7 +77,7 @@ const typeColors = {
 };
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { alerts, acknowledgeAlert, connected, lastUpdate } = useRealTimeUpdates();
   const [settings, setSettings] = useState<NotificationSettings>({
     email: true,
     slack: true,
@@ -75,27 +86,47 @@ export default function Notifications() {
     criticalOnly: false,
   });
 
+  const acknowledgeAllMutation = trpc.notifications.acknowledgeAll.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.acknowledged} notifications acknowledged`);
+    },
+  });
+
+  // Convert real-time alerts to notification format for display
+  const notifications = useMemo(() => {
+    return alerts.map(alert => ({
+      id: alert.id,
+      type: alert.type === "critical" ? "error" as const : 
+            alert.type === "warning" ? "warning" as const : "info" as const,
+      title: alert.title,
+      message: alert.message,
+      timestamp: formatTimeAgo(alert.timestamp),
+      read: alert.acknowledged,
+      source: alert.category.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase()),
+      category: alert.category,
+      resource: alert.resource,
+      namespace: alert.namespace,
+    }));
+  }, [alerts]);
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleMarkAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    acknowledgeAlert(id);
+    toast.success("Notification acknowledged");
   };
 
   const handleMarkAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    toast.success("All notifications marked as read");
+    acknowledgeAllMutation.mutate();
   };
 
   const handleDelete = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    toast.success("Notification deleted");
+    acknowledgeAlert(id);
+    toast.success("Notification acknowledged");
   };
 
   const handleClearAll = () => {
-    setNotifications([]);
-    toast.success("All notifications cleared");
+    acknowledgeAllMutation.mutate();
   };
 
   return (

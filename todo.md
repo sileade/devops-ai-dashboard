@@ -169,3 +169,31 @@
 - [x] Extract connections router to separate file
 - [x] Update main routers.ts to import from modules
 - [x] Verify all tests still pass
+
+## Phase 6 - Real-time Updates, Notifications & Metrics
+
+### WebSocket Real-time Updates
+- [x] Install socket.io package
+- [x] Create WebSocket server integration
+- [x] Add real-time container status updates
+- [x] Add real-time pod status updates
+- [x] Create useRealTimeUpdates hook for frontend
+- [x] Update Dashboard with live status indicators
+
+### Critical Event Notifications
+- [x] Create alerts in-memory storage (WebSocket-based)
+- [x] Implement alert detection logic (pod crash, high CPU)
+- [x] Create notifications API endpoints
+- [x] Add toast notifications in UI
+- [x] Update Notifications page with real-time data
+- [x] Add visual indicators for critical alerts
+
+### Metrics Charts (24h History)
+- [x] Install recharts library
+- [x] Implement metrics collection via WebSocket
+- [x] Create MetricsChart component
+- [x] Create CPU usage chart
+- [x] Create Memory usage chart
+- [x] Create Network I/O chart
+- [x] Add time range selector (1h, 6h, 12h, 24h)
+- [x] Integrate charts into Dashboard

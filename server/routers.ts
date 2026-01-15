@@ -9,6 +9,7 @@ import {
   kubernetesRouter,
   aiRouter,
   connectionsRouter,
+  notificationsRouter,
 } from "./routers/index";
 
 /**
@@ -23,6 +24,7 @@ import {
  * - kubernetes: Pods, deployments, services, cluster operations
  * - ai: Chat, analysis, troubleshooting, knowledge base
  * - connections: Infrastructure connection configuration
+ * - notifications: Alerts and notification management
  */
 export const appRouter = router({
   system: systemRouter,
@@ -32,6 +34,7 @@ export const appRouter = router({
   kubernetes: kubernetesRouter,
   ai: aiRouter,
   connections: connectionsRouter,
+  notifications: notificationsRouter,
 });
 
 export type AppRouter = typeof appRouter;

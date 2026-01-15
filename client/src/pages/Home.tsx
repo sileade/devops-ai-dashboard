@@ -15,10 +15,15 @@ import {
   HardDrive,
   MemoryStick,
   RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { useRealTimeUpdates } from "@/hooks/useRealTimeUpdates";
+import { MetricsChart } from "@/components/MetricsChart";
+import { LiveStatusIndicator } from "@/components/LiveStatusIndicator";
 
 type StatusType = "healthy" | "warning" | "error";
 
@@ -159,6 +164,9 @@ function formatTimeAgo(date: Date): string {
 export default function Home() {
   const [, setLocation] = useLocation();
   
+  // Real-time updates via WebSocket
+  const { connected, metricsHistory, alerts, lastUpdate } = useRealTimeUpdates();
+  
   // Fetch real data from API
   const overview = trpc.dashboard.getOverview.useQuery();
   const activity = trpc.dashboard.getRecentActivity.useQuery();
@@ -208,15 +216,18 @@ export default function Home() {
             Monitor and manage your DevOps infrastructure
           </p>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleRefresh} 
-          disabled={isLoading}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-4">
+          <LiveStatusIndicator connected={connected} lastUpdate={lastUpdate} />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRefresh} 
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -440,17 +451,20 @@ export default function Home() {
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
                 <div className="flex items-center gap-3">
-                  <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                  <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-yellow-500'} animate-pulse`} />
                   <span className="text-sm font-medium">WebSocket</span>
                 </div>
-                <Badge variant="outline" className="border-yellow-500/30 text-yellow-500">
-                  Reconnecting
+                <Badge variant="outline" className={connected ? "border-green-500/30 text-green-500" : "border-yellow-500/30 text-yellow-500"}>
+                  {connected ? 'Connected' : 'Reconnecting'}
                 </Badge>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Metrics Charts Section */}
+      <MetricsChart data={metricsHistory} className="" />
     </div>
   );
 }
