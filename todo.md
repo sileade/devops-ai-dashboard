@@ -128,6 +128,25 @@
 ### UX/UI Improvements
 - [x] Add loading skeletons for data fetching
 - [x] Improve error handling and user feedback
-- [ ] Add confirmation dialogs for destructive actions
+- [x] Add confirmation dialogs for destructive actions
 - [ ] Optimize WebSocket reconnection logic
 - [ ] Add keyboard shortcuts for common actions
+
+## Phase 4 - Enhanced Chat Features
+
+### Confirmation Dialogs
+- [x] Add confirmation dialog for clearing chat history
+- [x] Add confirmation dialog for deleting containers
+- [x] Add confirmation dialog for stopping containers
+- [x] Add confirmation dialog for restarting containers
+
+### Chat Export
+- [x] Add export chat history to JSON file
+- [x] Add export chat history to Markdown file
+- [x] Add download button in AI Assistant UI
+
+### Chat Search
+- [x] Add search input field in AI Assistant
+- [x] Implement backend search endpoint
+- [x] Highlight search results in chat history
+- [x] Add search by date filter

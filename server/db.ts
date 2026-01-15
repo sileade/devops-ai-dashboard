@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, and, desc, like, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -331,5 +331,144 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   } catch (error) {
     console.error("[Database] Failed to update session title:", error);
     return false;
+  }
+}
+
+// Search chat messages by content
+export async function searchChatMessages(
+  userOpenId: string | null,
+  query: string,
+  options?: {
+    sessionId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+  }
+): Promise<{
+  id: number;
+  sessionId: string;
+  sessionTitle: string | null;
+  role: string;
+  content: string;
+  createdAt: Date;
+}[]> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot search messages: database not available");
+    return [];
+  }
+
+  try {
+    const limit = options?.limit || 50;
+    
+    // Build conditions
+    const conditions = [like(chatMessages.content, `%${query}%`)];
+    
+    if (options?.sessionId) {
+      const session = await db.select().from(chatSessions)
+        .where(eq(chatSessions.sessionId, options.sessionId))
+        .limit(1);
+      if (session.length > 0) {
+        conditions.push(eq(chatMessages.conversationId, session[0].id));
+      }
+    }
+    
+    if (options?.startDate) {
+      conditions.push(gte(chatMessages.createdAt, options.startDate));
+    }
+    
+    if (options?.endDate) {
+      conditions.push(lte(chatMessages.createdAt, options.endDate));
+    }
+
+    // Join with sessions to filter by user and get session info
+    const results = await db
+      .select({
+        id: chatMessages.id,
+        sessionId: chatSessions.sessionId,
+        sessionTitle: chatSessions.title,
+        role: chatMessages.role,
+        content: chatMessages.content,
+        createdAt: chatMessages.createdAt,
+      })
+      .from(chatMessages)
+      .innerJoin(chatSessions, eq(chatMessages.conversationId, chatSessions.id))
+      .where(and(
+        userOpenId ? eq(chatSessions.userOpenId, userOpenId) : undefined,
+        ...conditions
+      ))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit);
+
+    return results;
+  } catch (error) {
+    console.error("[Database] Failed to search messages:", error);
+    return [];
+  }
+}
+
+// Export chat history for a session
+export async function exportChatHistory(
+  sessionId: string,
+  format: "json" | "markdown" = "json"
+): Promise<string> {
+  const db = await getDb();
+  if (!db) {
+    return format === "json" ? "[]" : "# No data available";
+  }
+
+  try {
+    // Get session info
+    const session = await db.select().from(chatSessions)
+      .where(eq(chatSessions.sessionId, sessionId))
+      .limit(1);
+
+    if (session.length === 0) {
+      return format === "json" ? "[]" : "# Session not found";
+    }
+
+    // Get all messages
+    const messages = await db.select().from(chatMessages)
+      .where(eq(chatMessages.conversationId, session[0].id))
+      .orderBy(chatMessages.createdAt);
+
+    if (format === "json") {
+      return JSON.stringify({
+        session: {
+          id: session[0].sessionId,
+          title: session[0].title,
+          createdAt: session[0].createdAt,
+        },
+        messages: messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.createdAt,
+          feedback: m.feedback,
+        })),
+      }, null, 2);
+    } else {
+      // Markdown format
+      let md = `# ${session[0].title || "Chat Export"}\n\n`;
+      md += `**Session ID:** ${session[0].sessionId}\n`;
+      md += `**Created:** ${session[0].createdAt?.toISOString()}\n\n`;
+      md += `---\n\n`;
+
+      for (const msg of messages) {
+        const role = msg.role === "user" ? "👤 User" : "🤖 Assistant";
+        const timestamp = msg.createdAt?.toLocaleString() || "";
+        md += `### ${role}\n`;
+        md += `*${timestamp}*\n\n`;
+        md += `${msg.content}\n\n`;
+        if (msg.feedback) {
+          md += `*Feedback: ${msg.feedback}*\n\n`;
+        }
+        md += `---\n\n`;
+      }
+
+      return md;
+    }
+  } catch (error) {
+    console.error("[Database] Failed to export chat history:", error);
+    return format === "json" ? "[]" : "# Export failed";
   }
 }

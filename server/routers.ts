@@ -492,6 +492,37 @@ export const appRouter = router({
         ],
       };
     }),
+
+    // Search chat history
+    searchHistory: publicProcedure
+      .input(z.object({
+        query: z.string().min(1),
+        sessionId: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        limit: z.number().optional().default(50),
+      }))
+      .query(async ({ input, ctx }) => {
+        const userOpenId = ctx.user?.openId || null;
+        const results = await chatDb.searchChatMessages(userOpenId, input.query, {
+          sessionId: input.sessionId,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          limit: input.limit,
+        });
+        return results;
+      }),
+
+    // Export chat history
+    exportHistory: publicProcedure
+      .input(z.object({
+        sessionId: z.string(),
+        format: z.enum(["json", "markdown"]).default("json"),
+      }))
+      .query(async ({ input }) => {
+        const content = await chatDb.exportChatHistory(input.sessionId, input.format);
+        return { content, format: input.format };
+      }),
   }),
 
   // Infrastructure connections (for Settings page)

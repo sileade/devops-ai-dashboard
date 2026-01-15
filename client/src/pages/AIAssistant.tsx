@@ -6,6 +6,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Bot,
   Send,
   Sparkles,
@@ -26,11 +33,18 @@ import {
   Play,
   Plus,
   MessageSquare,
+  Download,
+  Search,
+  X,
+  FileJson,
+  FileText,
+  MoreVertical,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Streamdown } from "streamdown";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { ClearChatDialog } from "@/components/ConfirmDialog";
 
 interface Message {
   id: string;
@@ -40,6 +54,15 @@ interface Message {
   suggestions?: string[];
   commands?: { command: string; description: string }[];
   feedbackGiven?: "positive" | "negative";
+}
+
+interface SearchResult {
+  id: number;
+  sessionId: string;
+  sessionTitle: string | null;
+  role: string;
+  content: string;
+  createdAt: Date;
 }
 
 const welcomeMessage: Message = {
@@ -77,6 +100,12 @@ export default function AIAssistant() {
   const [activeTab, setActiveTab] = useState("chat");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // tRPC queries
@@ -86,6 +115,14 @@ export default function AIAssistant() {
   const knowledgeStats = trpc.ai.getKnowledgeStats.useQuery();
   const clearHistoryMutation = trpc.ai.clearHistory.useMutation();
   const createSessionMutation = trpc.ai.createSession.useMutation();
+  const searchHistoryQuery = trpc.ai.searchHistory.useQuery(
+    { query: searchQuery },
+    { enabled: false }
+  );
+  const exportHistoryQuery = trpc.ai.exportHistory.useQuery(
+    { sessionId: sessionId || "", format: "json" },
+    { enabled: false }
+  );
 
   // Get or create session on mount
   const sessionQuery = trpc.ai.getSession.useQuery(
@@ -246,11 +283,16 @@ Would you like me to elaborate on any of these points?`,
 
   const handleClearHistory = async () => {
     if (sessionId) {
+      setIsClearingHistory(true);
       try {
         await clearHistoryMutation.mutateAsync({ sessionId });
         toast.success("Chat history cleared");
+        setShowClearDialog(false);
       } catch (error) {
         console.error("Failed to clear history:", error);
+        toast.error("Failed to clear chat history");
+      } finally {
+        setIsClearingHistory(false);
       }
     }
     setMessages([welcomeMessage]);
@@ -269,8 +311,79 @@ Would you like me to elaborate on any of these points?`,
     }
   };
 
+  const handleExport = async (format: "json" | "markdown") => {
+    if (!sessionId) {
+      toast.error("No chat session to export");
+      return;
+    }
+
+    try {
+      const result = await exportHistoryQuery.refetch();
+      if (result.data) {
+        // Create downloadable file
+        const blob = new Blob([result.data.content], {
+          type: format === "json" ? "application/json" : "text/markdown",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chat-export-${new Date().toISOString().split("T")[0]}.${format === "json" ? "json" : "md"}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`Chat exported as ${format.toUpperCase()}`);
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export chat history");
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setIsSearching(true);
+    try {
+      const result = await searchHistoryQuery.refetch();
+      if (result.data) {
+        setSearchResults(result.data);
+        if (result.data.length === 0) {
+          toast.info("No results found");
+        }
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error("Search failed");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const highlightSearchTerm = (text: string, term: string) => {
+    if (!term) return text;
+    const parts = text.split(new RegExp(`(${term})`, "gi"));
+    return parts.map((part, i) =>
+      part.toLowerCase() === term.toLowerCase() ? (
+        <mark key={i} className="bg-yellow-500/30 text-yellow-200 px-0.5 rounded">
+          {part}
+        </mark>
+      ) : (
+        part
+      )
+    );
+  };
+
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-6">
+      {/* Clear Chat Confirmation Dialog */}
+      <ClearChatDialog
+        open={showClearDialog}
+        onOpenChange={setShowClearDialog}
+        onConfirm={handleClearHistory}
+        isLoading={isClearingHistory}
+      />
+
       <div className="flex-1 flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -295,12 +408,97 @@ Would you like me to elaborate on any of these points?`,
               <Plus className="h-4 w-4 mr-2" />
               New Chat
             </Button>
-            <Button variant="outline" size="sm" onClick={handleClearHistory}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              Clear
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowSearch(!showSearch)}>
+                  <Search className="h-4 w-4 mr-2" />
+                  Search History
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleExport("json")}>
+                  <FileJson className="h-4 w-4 mr-2" />
+                  Export as JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as Markdown
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => setShowClearDialog(true)}
+                  className="text-red-500 focus:text-red-500"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Clear History
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+
+        {/* Search Panel */}
+        {showSearch && (
+          <Card className="mb-4">
+            <CardContent className="pt-4">
+              <div className="flex gap-2 mb-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search chat history..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    className="pl-10"
+                  />
+                </div>
+                <Button onClick={handleSearch} disabled={isSearching || !searchQuery.trim()}>
+                  {isSearching ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Search"}
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => {
+                  setShowSearch(false);
+                  setSearchQuery("");
+                  setSearchResults([]);
+                }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {searchResults.length > 0 && (
+                <ScrollArea className="h-48">
+                  <div className="space-y-2">
+                    {searchResults.map((result) => (
+                      <div
+                        key={result.id}
+                        className="p-3 rounded-lg bg-secondary/50 hover:bg-secondary cursor-pointer"
+                        onClick={() => {
+                          // Navigate to the message in chat
+                          toast.info(`Found in: ${result.sessionTitle || "Untitled Chat"}`);
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <Badge variant="outline" className="text-xs">
+                            {result.role === "user" ? "You" : "AI"}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(result.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-sm line-clamp-2">
+                          {highlightSearchTerm(result.content, searchQuery)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
           <TabsList className="w-fit">

@@ -44,6 +44,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { StopContainerDialog, RestartContainerDialog, DeleteContainerDialog } from "@/components/ConfirmDialog";
 
 const statusColors: Record<string, string> = {
   running: "bg-green-500/10 text-green-500 border-green-500/30",
@@ -57,8 +58,12 @@ const statusColors: Record<string, string> = {
 export default function Docker() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
+  const [selectedContainerName, setSelectedContainerName] = useState("");
   const [showLogs, setShowLogs] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showStopDialog, setShowStopDialog] = useState(false);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket({
@@ -308,7 +313,11 @@ export default function Docker() {
                           <DropdownMenuContent align="end">
                             {container.status === "running" ? (
                               <DropdownMenuItem
-                                onClick={() => stopMutation.mutate({ containerId: container.id })}
+                                onClick={() => {
+                                  setSelectedContainer(container.id);
+                                  setSelectedContainerName(container.name);
+                                  setShowStopDialog(true);
+                                }}
                                 disabled={stopMutation.isPending}
                               >
                                 <Square className="h-4 w-4 mr-2" />
@@ -324,7 +333,11 @@ export default function Docker() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
-                              onClick={() => restartMutation.mutate({ containerId: container.id })}
+                              onClick={() => {
+                                setSelectedContainer(container.id);
+                                setSelectedContainerName(container.name);
+                                setShowRestartDialog(true);
+                              }}
                               disabled={restartMutation.isPending}
                             >
                               <RotateCcw className="h-4 w-4 mr-2" />
@@ -338,7 +351,14 @@ export default function Docker() {
                               <Activity className="h-4 w-4 mr-2" />
                               Stats
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive">
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => {
+                                setSelectedContainer(container.id);
+                                setSelectedContainerName(container.name);
+                                setShowDeleteDialog(true);
+                              }}
+                            >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Remove
                             </DropdownMenuItem>
@@ -552,6 +572,47 @@ export default function Docker() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Stop Container Confirmation Dialog */}
+      <StopContainerDialog
+        open={showStopDialog}
+        onOpenChange={setShowStopDialog}
+        containerName={selectedContainerName}
+        onConfirm={() => {
+          if (selectedContainer) {
+            stopMutation.mutate({ containerId: selectedContainer });
+          }
+          setShowStopDialog(false);
+        }}
+        isLoading={stopMutation.isPending}
+      />
+
+      {/* Restart Container Confirmation Dialog */}
+      <RestartContainerDialog
+        open={showRestartDialog}
+        onOpenChange={setShowRestartDialog}
+        containerName={selectedContainerName}
+        onConfirm={() => {
+          if (selectedContainer) {
+            restartMutation.mutate({ containerId: selectedContainer });
+          }
+          setShowRestartDialog(false);
+        }}
+        isLoading={restartMutation.isPending}
+      />
+
+      {/* Delete Container Confirmation Dialog */}
+      <DeleteContainerDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        containerName={selectedContainerName}
+        onConfirm={() => {
+          if (selectedContainer) {
+            toast.info("Container removal is not yet implemented");
+          }
+          setShowDeleteDialog(false);
+        }}
+      />
     </div>
   );
 }
