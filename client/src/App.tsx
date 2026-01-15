@@ -19,6 +19,8 @@ import Settings from "./pages/Settings";
 import Topology from "./pages/Topology";
 import AlertSettings from "./pages/AlertSettings";
 import AutoScaling from "./pages/AutoScaling";
+import ScheduledScaling from "./pages/ScheduledScaling";
+import ABTesting from "./pages/ABTesting";
 
 function Router() {
   return (
@@ -38,6 +40,8 @@ function Router() {
         <Route path="/topology" component={Topology} />
         <Route path="/settings/alerts" component={AlertSettings} />
         <Route path="/autoscaling" component={AutoScaling} />
+        <Route path="/scheduled-scaling" component={ScheduledScaling} />
+        <Route path="/ab-testing" component={ABTesting} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

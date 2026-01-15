@@ -252,3 +252,28 @@
 - [x] Implement rollback mechanism for failed scaling
 - [ ] Add cost estimation for scaling decisions
 - [x] Create scaling event notifications
+
+## Phase 9 - Scheduled Scaling & A/B Testing
+
+### Scheduled Scaling
+- [x] Create scheduled_scaling table in database
+- [x] Implement cron-based scheduling system
+- [x] Add UI for creating scheduled scaling rules
+- [x] Support recurring schedules (daily, weekly, custom cron)
+- [x] Add timezone support for schedules
+- [x] Integrate with autoscaling engine
+
+### A/B Testing for Autoscaling Rules
+- [x] Create ab_test_experiments table in database
+- [x] Create ab_test_results table for metrics
+- [x] Implement experiment creation and management
+- [x] Add traffic splitting logic
+- [x] Create statistical analysis for results
+- [x] Add UI for experiment management
+- [x] Generate winner recommendations
+
+### Documentation & Repository
+- [ ] Update README with new features
+- [ ] Add API documentation
+- [ ] Publish to GitHub repository
+- [ ] Full code review

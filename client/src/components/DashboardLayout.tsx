@@ -40,6 +40,8 @@ import {
   ChevronDown,
   Folder,
   Scale,
+  Calendar,
+  FlaskConical,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -83,7 +85,16 @@ const menuItems: MenuItem[] = [
   { icon: Bot, label: "AI Assistant", path: "/ai-assistant" },
   { icon: ScrollText, label: "Logs", path: "/logs" },
   { icon: Bell, label: "Notifications", path: "/notifications" },
-  { icon: Scale, label: "Auto-Scaling", path: "/autoscaling" },
+  {
+    icon: Scale,
+    label: "Scaling",
+    path: "/scaling",
+    children: [
+      { icon: Scale, label: "Auto-Scaling", path: "/autoscaling" },
+      { icon: Calendar, label: "Scheduled", path: "/scheduled-scaling" },
+      { icon: FlaskConical, label: "A/B Testing", path: "/ab-testing" },
+    ],
+  },
   { icon: GitBranch, label: "Topology", path: "/topology" },
   {
     icon: Settings,

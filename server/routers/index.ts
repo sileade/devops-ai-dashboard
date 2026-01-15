@@ -12,3 +12,5 @@ export { connectionsRouter } from "./connections";
 export { notificationsRouter } from "./notifications";
 export { metricsRouter, alertThresholdsRouter, alertHistoryRouter } from "./metrics";
 export { autoscalingRouter } from "./autoscaling";
+export { scheduledScalingRouter } from "./scheduledScaling";
+export { abTestingRouter } from "./abTesting";

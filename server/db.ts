@@ -1,6 +1,6 @@
 import { eq, and, desc, like, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession, metricsHistory, alertThresholds, alertHistory, InsertMetricsHistory, InsertAlertThreshold, InsertAlertHistory, autoscalingRules, autoscalingHistory, aiScalingPredictions, InsertAutoscalingRule, InsertAutoscalingHistory, InsertAiScalingPrediction } from "../drizzle/schema";
+import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession, metricsHistory, alertThresholds, alertHistory, InsertMetricsHistory, InsertAlertThreshold, InsertAlertHistory, autoscalingRules, autoscalingHistory, aiScalingPredictions, InsertAutoscalingRule, InsertAutoscalingHistory, InsertAiScalingPrediction, scheduledScaling, scheduledScalingHistory, abTestExperiments, abTestMetrics, InsertScheduledScaling, InsertScheduledScalingHistory, InsertAbTestExperiment, InsertAbTestMetric } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1142,6 +1142,444 @@ export async function updateRuleLastScaled(ruleId: number): Promise<boolean> {
     return true;
   } catch (error) {
     console.error("[Database] Failed to update last scaled:", error);
+    return false;
+  }
+}
+
+
+// ============================================
+// SCHEDULED SCALING FUNCTIONS
+// ============================================
+
+// Get all scheduled scaling rules
+export async function getScheduledScalingRules(options?: {
+  applicationId?: number;
+  enabledOnly?: boolean;
+}): Promise<typeof scheduledScaling.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.applicationId) {
+      conditions.push(eq(scheduledScaling.applicationId, options.applicationId));
+    }
+    if (options?.enabledOnly) {
+      conditions.push(eq(scheduledScaling.isEnabled, true));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(scheduledScaling)
+        .where(and(...conditions))
+        .orderBy(desc(scheduledScaling.createdAt));
+    }
+    
+    return await db.select().from(scheduledScaling)
+      .orderBy(desc(scheduledScaling.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling rules:", error);
+    return [];
+  }
+}
+
+// Get scheduled scaling rule by ID
+export async function getScheduledScalingById(id: number): Promise<typeof scheduledScaling.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const results = await db.select().from(scheduledScaling)
+      .where(eq(scheduledScaling.id, id))
+      .limit(1);
+    return results[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling by ID:", error);
+    return null;
+  }
+}
+
+// Create scheduled scaling rule
+export async function createScheduledScaling(rule: InsertScheduledScaling): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(scheduledScaling).values(rule);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to create scheduled scaling:", error);
+    return null;
+  }
+}
+
+// Update scheduled scaling rule
+export async function updateScheduledScaling(id: number, updates: Partial<InsertScheduledScaling>): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(scheduledScaling)
+      .set(updates)
+      .where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update scheduled scaling:", error);
+    return false;
+  }
+}
+
+// Delete scheduled scaling rule
+export async function deleteScheduledScaling(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.delete(scheduledScaling).where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete scheduled scaling:", error);
+    return false;
+  }
+}
+
+// Record scheduled scaling execution
+export async function recordScheduledScalingExecution(record: InsertScheduledScalingHistory): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(scheduledScalingHistory).values(record);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record scheduled scaling execution:", error);
+    return null;
+  }
+}
+
+// Get scheduled scaling history
+export async function getScheduledScalingHistory(scheduleId?: number, limit: number = 50): Promise<typeof scheduledScalingHistory.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    if (scheduleId) {
+      return await db.select().from(scheduledScalingHistory)
+        .where(eq(scheduledScalingHistory.scheduleId, scheduleId))
+        .orderBy(desc(scheduledScalingHistory.createdAt))
+        .limit(limit);
+    }
+    
+    return await db.select().from(scheduledScalingHistory)
+      .orderBy(desc(scheduledScalingHistory.createdAt))
+      .limit(limit);
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling history:", error);
+    return [];
+  }
+}
+
+// Update schedule execution stats
+export async function updateScheduleExecutionStats(id: number, success: boolean): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    const schedule = await getScheduledScalingById(id);
+    if (!schedule) return false;
+
+    await db.update(scheduledScaling)
+      .set({
+        lastExecutedAt: new Date(),
+        executionCount: schedule.executionCount + 1,
+        failureCount: success ? schedule.failureCount : schedule.failureCount + 1,
+      })
+      .where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update schedule stats:", error);
+    return false;
+  }
+}
+
+// ============================================
+// A/B TEST EXPERIMENTS FUNCTIONS
+// ============================================
+
+// Get all A/B test experiments
+export async function getAbTestExperiments(options?: {
+  applicationId?: number;
+  status?: "draft" | "running" | "paused" | "completed" | "cancelled";
+}): Promise<typeof abTestExperiments.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.applicationId) {
+      conditions.push(eq(abTestExperiments.applicationId, options.applicationId));
+    }
+    if (options?.status) {
+      conditions.push(eq(abTestExperiments.status, options.status));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(abTestExperiments)
+        .where(and(...conditions))
+        .orderBy(desc(abTestExperiments.createdAt));
+    }
+    
+    return await db.select().from(abTestExperiments)
+      .orderBy(desc(abTestExperiments.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test experiments:", error);
+    return [];
+  }
+}
+
+// Get A/B test experiment by ID
+export async function getAbTestExperimentById(id: number): Promise<typeof abTestExperiments.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const results = await db.select().from(abTestExperiments)
+      .where(eq(abTestExperiments.id, id))
+      .limit(1);
+    return results[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test by ID:", error);
+    return null;
+  }
+}
+
+// Create A/B test experiment
+export async function createAbTestExperiment(experiment: InsertAbTestExperiment): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(abTestExperiments).values(experiment);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to create A/B test:", error);
+    return null;
+  }
+}
+
+// Update A/B test experiment
+export async function updateAbTestExperiment(id: number, updates: Partial<InsertAbTestExperiment>): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(abTestExperiments)
+      .set(updates)
+      .where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update A/B test:", error);
+    return false;
+  }
+}
+
+// Delete A/B test experiment
+export async function deleteAbTestExperiment(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    // Delete metrics first
+    await db.delete(abTestMetrics).where(eq(abTestMetrics.experimentId, id));
+    // Then delete experiment
+    await db.delete(abTestExperiments).where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete A/B test:", error);
+    return false;
+  }
+}
+
+// Record A/B test metrics
+export async function recordAbTestMetrics(metrics: InsertAbTestMetric): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(abTestMetrics).values(metrics);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record A/B test metrics:", error);
+    return null;
+  }
+}
+
+// Get A/B test metrics
+export async function getAbTestMetrics(experimentId: number, variant?: "A" | "B"): Promise<typeof abTestMetrics.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [eq(abTestMetrics.experimentId, experimentId)];
+    
+    if (variant) {
+      conditions.push(eq(abTestMetrics.variant, variant));
+    }
+
+    return await db.select().from(abTestMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(abTestMetrics.timestamp));
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test metrics:", error);
+    return [];
+  }
+}
+
+// Calculate A/B test statistics
+export async function calculateAbTestStats(experimentId: number): Promise<{
+  variantA: { avgCpu: number; avgMemory: number; avgReplicas: number; totalScaleOps: number; oscillations: number };
+  variantB: { avgCpu: number; avgMemory: number; avgReplicas: number; totalScaleOps: number; oscillations: number };
+  sampleSize: { A: number; B: number };
+  recommendation: "A" | "B" | "inconclusive";
+  confidence: number;
+}> {
+  const db = await getDb();
+  const defaultResult = {
+    variantA: { avgCpu: 0, avgMemory: 0, avgReplicas: 0, totalScaleOps: 0, oscillations: 0 },
+    variantB: { avgCpu: 0, avgMemory: 0, avgReplicas: 0, totalScaleOps: 0, oscillations: 0 },
+    sampleSize: { A: 0, B: 0 },
+    recommendation: "inconclusive" as const,
+    confidence: 0,
+  };
+
+  if (!db) {
+    return defaultResult;
+  }
+
+  try {
+    const metricsA = await getAbTestMetrics(experimentId, "A");
+    const metricsB = await getAbTestMetrics(experimentId, "B");
+
+    if (metricsA.length === 0 || metricsB.length === 0) {
+      return defaultResult;
+    }
+
+    const calcStats = (metrics: typeof metricsA) => ({
+      avgCpu: Math.round(metrics.reduce((sum, m) => sum + m.avgCpuPercent, 0) / metrics.length),
+      avgMemory: Math.round(metrics.reduce((sum, m) => sum + m.avgMemoryPercent, 0) / metrics.length),
+      avgReplicas: Math.round(metrics.reduce((sum, m) => sum + m.avgReplicaCount, 0) / metrics.length),
+      totalScaleOps: metrics.reduce((sum, m) => sum + m.scaleUpCount + m.scaleDownCount, 0),
+      oscillations: metrics.reduce((sum, m) => sum + m.oscillationCount, 0),
+    });
+
+    const statsA = calcStats(metricsA);
+    const statsB = calcStats(metricsB);
+
+    // Simple scoring: lower oscillations + lower avg replicas = better
+    const scoreA = statsA.oscillations * 10 + statsA.avgReplicas;
+    const scoreB = statsB.oscillations * 10 + statsB.avgReplicas;
+
+    let recommendation: "A" | "B" | "inconclusive" = "inconclusive";
+    let confidence = 0;
+
+    const diff = Math.abs(scoreA - scoreB);
+    const minSamples = 10;
+
+    if (metricsA.length >= minSamples && metricsB.length >= minSamples) {
+      if (diff > 5) {
+        recommendation = scoreA < scoreB ? "A" : "B";
+        confidence = Math.min(95, 50 + diff * 5);
+      } else if (diff > 2) {
+        recommendation = scoreA < scoreB ? "A" : "B";
+        confidence = Math.min(70, 40 + diff * 10);
+      }
+    }
+
+    return {
+      variantA: statsA,
+      variantB: statsB,
+      sampleSize: { A: metricsA.length, B: metricsB.length },
+      recommendation,
+      confidence,
+    };
+  } catch (error) {
+    console.error("[Database] Failed to calculate A/B test stats:", error);
+    return defaultResult;
+  }
+}
+
+// Start A/B test
+export async function startAbTest(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(abTestExperiments)
+      .set({
+        status: "running",
+        startedAt: new Date(),
+      })
+      .where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to start A/B test:", error);
+    return false;
+  }
+}
+
+// Complete A/B test with winner
+export async function completeAbTest(id: number, winner: "A" | "B" | "inconclusive", confidence: number, reason: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(abTestExperiments)
+      .set({
+        status: "completed",
+        endedAt: new Date(),
+        winnerVariant: winner,
+        winnerConfidence: confidence,
+        winnerReason: reason,
+      })
+      .where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to complete A/B test:", error);
     return false;
   }
 }

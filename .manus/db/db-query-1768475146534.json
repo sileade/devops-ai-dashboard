@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS ab_test_metrics (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  experimentId INT NOT NULL,\n  variant ENUM('A', 'B') NOT NULL,\n  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  avgCpuPercent INT NOT NULL,\n  avgMemoryPercent INT NOT NULL,\n  avgResponseTimeMs INT,\n  errorRate INT,\n  scaleUpCount INT DEFAULT 0 NOT NULL,\n  scaleDownCount INT DEFAULT 0 NOT NULL,\n  avgReplicaCount INT NOT NULL,\n  estimatedCostUnits INT,\n  oscillationCount INT DEFAULT 0 NOT NULL,\n  cooldownViolations INT DEFAULT 0 NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS ab_test_metrics (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  experimentId INT NOT NULL,\n  variant ENUM('A', 'B') NOT NULL,\n  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  avgCpuPercent INT NOT NULL,\n  avgMemoryPercent INT NOT NULL,\n  avgResponseTimeMs INT,\n  errorRate INT,\n  scaleUpCount INT DEFAULT 0 NOT NULL,\n  scaleDownCount INT DEFAULT 0 NOT NULL,\n  avgReplicaCount INT NOT NULL,\n  estimatedCostUnits INT,\n  oscillationCount INT DEFAULT 0 NOT NULL,\n  cooldownViolations INT DEFAULT 0 NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 200
+}

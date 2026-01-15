@@ -14,6 +14,8 @@ import {
   alertThresholdsRouter,
   alertHistoryRouter,
   autoscalingRouter,
+  scheduledScalingRouter,
+  abTestingRouter,
 } from "./routers/index";
 
 /**
@@ -43,6 +45,8 @@ export const appRouter = router({
   alertThresholds: alertThresholdsRouter,
   alertHistory: alertHistoryRouter,
   autoscaling: autoscalingRouter,
+  scheduledScaling: scheduledScalingRouter,
+  abTesting: abTestingRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -306,3 +306,114 @@ export const aiScalingPredictions = mysqlTable("ai_scaling_predictions", {
 
 export type AiScalingPrediction = typeof aiScalingPredictions.$inferSelect;
 export type InsertAiScalingPrediction = typeof aiScalingPredictions.$inferInsert;
+
+
+// Scheduled scaling for predictable load patterns
+export const scheduledScaling = mysqlTable("scheduled_scaling", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetType: mysqlEnum("targetType", ["deployment", "container", "service"]).default("deployment").notNull(),
+  targetName: varchar("targetName", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }),
+  cronExpression: varchar("cronExpression", { length: 100 }).notNull(),
+  timezone: varchar("timezone", { length: 50 }).default("UTC").notNull(),
+  targetReplicas: int("targetReplicas").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastExecutedAt: timestamp("lastExecutedAt"),
+  nextExecutionAt: timestamp("nextExecutionAt"),
+  executionCount: int("executionCount").default(0).notNull(),
+  failureCount: int("failureCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ScheduledScaling = typeof scheduledScaling.$inferSelect;
+export type InsertScheduledScaling = typeof scheduledScaling.$inferInsert;
+
+// Scheduled scaling execution history
+export const scheduledScalingHistory = mysqlTable("scheduled_scaling_history", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleId: int("scheduleId").notNull(),
+  previousReplicas: int("previousReplicas").notNull(),
+  targetReplicas: int("targetReplicas").notNull(),
+  actualReplicas: int("actualReplicas"),
+  status: mysqlEnum("status", ["pending", "executing", "completed", "failed", "skipped"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  executionTimeMs: int("executionTimeMs"),
+  scheduledFor: timestamp("scheduledFor").notNull(),
+  executedAt: timestamp("executedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ScheduledScalingHistory = typeof scheduledScalingHistory.$inferSelect;
+export type InsertScheduledScalingHistory = typeof scheduledScalingHistory.$inferInsert;
+
+// A/B test experiments for autoscaling rules
+export const abTestExperiments = mysqlTable("ab_test_experiments", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetType: mysqlEnum("targetType", ["deployment", "container", "service"]).default("deployment").notNull(),
+  targetName: varchar("targetName", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }),
+  status: mysqlEnum("status", ["draft", "running", "paused", "completed", "cancelled"]).default("draft").notNull(),
+  // Variant A (Control)
+  variantAName: varchar("variantAName", { length: 100 }).default("Control").notNull(),
+  variantAScaleUpThreshold: int("variantAScaleUpThreshold").notNull(),
+  variantAScaleDownThreshold: int("variantAScaleDownThreshold").notNull(),
+  variantACooldown: int("variantACooldown").default(300).notNull(),
+  variantAMinReplicas: int("variantAMinReplicas").default(1).notNull(),
+  variantAMaxReplicas: int("variantAMaxReplicas").default(10).notNull(),
+  // Variant B (Treatment)
+  variantBName: varchar("variantBName", { length: 100 }).default("Treatment").notNull(),
+  variantBScaleUpThreshold: int("variantBScaleUpThreshold").notNull(),
+  variantBScaleDownThreshold: int("variantBScaleDownThreshold").notNull(),
+  variantBCooldown: int("variantBCooldown").default(300).notNull(),
+  variantBMinReplicas: int("variantBMinReplicas").default(1).notNull(),
+  variantBMaxReplicas: int("variantBMaxReplicas").default(10).notNull(),
+  // Traffic split
+  trafficSplitPercent: int("trafficSplitPercent").default(50).notNull(), // % to variant B
+  // Duration
+  startedAt: timestamp("startedAt"),
+  endedAt: timestamp("endedAt"),
+  durationHours: int("durationHours").default(24).notNull(),
+  // Winner
+  winnerVariant: mysqlEnum("winnerVariant", ["A", "B", "inconclusive"]),
+  winnerConfidence: int("winnerConfidence"),
+  winnerReason: text("winnerReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AbTestExperiment = typeof abTestExperiments.$inferSelect;
+export type InsertAbTestExperiment = typeof abTestExperiments.$inferInsert;
+
+// A/B test metrics for each variant
+export const abTestMetrics = mysqlTable("ab_test_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  experimentId: int("experimentId").notNull(),
+  variant: mysqlEnum("variant", ["A", "B"]).notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  // Performance metrics
+  avgCpuPercent: int("avgCpuPercent").notNull(),
+  avgMemoryPercent: int("avgMemoryPercent").notNull(),
+  avgResponseTimeMs: int("avgResponseTimeMs"),
+  errorRate: int("errorRate"), // per 10000 requests
+  // Scaling metrics
+  scaleUpCount: int("scaleUpCount").default(0).notNull(),
+  scaleDownCount: int("scaleDownCount").default(0).notNull(),
+  avgReplicaCount: int("avgReplicaCount").notNull(),
+  // Cost metrics (estimated)
+  estimatedCostUnits: int("estimatedCostUnits"),
+  // Stability metrics
+  oscillationCount: int("oscillationCount").default(0).notNull(), // rapid up/down cycles
+  cooldownViolations: int("cooldownViolations").default(0).notNull(),
+});
+
+export type AbTestMetric = typeof abTestMetrics.$inferSelect;
+export type InsertAbTestMetric = typeof abTestMetrics.$inferInsert;
