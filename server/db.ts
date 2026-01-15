@@ -1,6 +1,6 @@
 import { eq, and, desc, like, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession, metricsHistory, alertThresholds, alertHistory, InsertMetricsHistory, InsertAlertThreshold, InsertAlertHistory } from "../drizzle/schema";
+import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession, metricsHistory, alertThresholds, alertHistory, InsertMetricsHistory, InsertAlertThreshold, InsertAlertHistory, autoscalingRules, autoscalingHistory, aiScalingPredictions, InsertAutoscalingRule, InsertAutoscalingHistory, InsertAiScalingPrediction } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -848,6 +848,300 @@ export async function isThresholdInCooldown(thresholdId: number): Promise<boolea
     return Date.now() - lastTriggered < cooldownMs;
   } catch (error) {
     console.error("[Database] Failed to check threshold cooldown:", error);
+    return false;
+  }
+}
+
+
+// ============================================
+// AUTOSCALING FUNCTIONS
+// ============================================
+
+// Get all autoscaling rules
+export async function getAutoscalingRules(options?: {
+  applicationId?: number;
+  resourceType?: "deployment" | "container" | "pod" | "service";
+  enabledOnly?: boolean;
+}): Promise<typeof autoscalingRules.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.applicationId) {
+      conditions.push(eq(autoscalingRules.applicationId, options.applicationId));
+    }
+    if (options?.resourceType) {
+      conditions.push(eq(autoscalingRules.resourceType, options.resourceType));
+    }
+    if (options?.enabledOnly) {
+      conditions.push(eq(autoscalingRules.isEnabled, true));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(autoscalingRules)
+        .where(and(...conditions))
+        .orderBy(desc(autoscalingRules.createdAt));
+    }
+    
+    return await db.select().from(autoscalingRules)
+      .orderBy(desc(autoscalingRules.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get autoscaling rules:", error);
+    return [];
+  }
+}
+
+// Get autoscaling rule by ID
+export async function getAutoscalingRuleById(id: number): Promise<typeof autoscalingRules.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const results = await db.select().from(autoscalingRules)
+      .where(eq(autoscalingRules.id, id))
+      .limit(1);
+    return results[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get autoscaling rule:", error);
+    return null;
+  }
+}
+
+// Create autoscaling rule
+export async function createAutoscalingRule(rule: InsertAutoscalingRule): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(autoscalingRules).values(rule);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to create autoscaling rule:", error);
+    return null;
+  }
+}
+
+// Update autoscaling rule
+export async function updateAutoscalingRule(
+  id: number,
+  updates: Partial<InsertAutoscalingRule>
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(autoscalingRules)
+      .set(updates)
+      .where(eq(autoscalingRules.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update autoscaling rule:", error);
+    return false;
+  }
+}
+
+// Delete autoscaling rule
+export async function deleteAutoscalingRule(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.delete(autoscalingRules).where(eq(autoscalingRules.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete autoscaling rule:", error);
+    return false;
+  }
+}
+
+// Record autoscaling action
+export async function recordAutoscalingAction(action: InsertAutoscalingHistory): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(autoscalingHistory).values(action);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record autoscaling action:", error);
+    return null;
+  }
+}
+
+// Update autoscaling action status
+export async function updateAutoscalingActionStatus(
+  id: number,
+  status: "pending" | "executing" | "completed" | "failed" | "cancelled",
+  errorMessage?: string
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    const updates: Record<string, unknown> = { status };
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      updates.completedAt = new Date();
+    }
+    if (errorMessage) {
+      updates.errorMessage = errorMessage;
+    }
+
+    await db.update(autoscalingHistory)
+      .set(updates)
+      .where(eq(autoscalingHistory.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update autoscaling action:", error);
+    return false;
+  }
+}
+
+// Get autoscaling history
+export async function getAutoscalingHistory(options?: {
+  ruleId?: number;
+  applicationId?: number;
+  status?: "pending" | "executing" | "completed" | "failed" | "cancelled";
+  limit?: number;
+}): Promise<typeof autoscalingHistory.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.ruleId) {
+      conditions.push(eq(autoscalingHistory.ruleId, options.ruleId));
+    }
+    if (options?.applicationId) {
+      conditions.push(eq(autoscalingHistory.applicationId, options.applicationId));
+    }
+    if (options?.status) {
+      conditions.push(eq(autoscalingHistory.status, options.status));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(autoscalingHistory)
+        .where(and(...conditions))
+        .orderBy(desc(autoscalingHistory.createdAt))
+        .limit(options?.limit || 100);
+    }
+    
+    return await db.select().from(autoscalingHistory)
+      .orderBy(desc(autoscalingHistory.createdAt))
+      .limit(options?.limit || 100);
+  } catch (error) {
+    console.error("[Database] Failed to get autoscaling history:", error);
+    return [];
+  }
+}
+
+// Get pending approval actions
+export async function getPendingApprovalActions(): Promise<typeof autoscalingHistory.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    return await db.select().from(autoscalingHistory)
+      .where(eq(autoscalingHistory.action, "pending_approval"))
+      .orderBy(desc(autoscalingHistory.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get pending approvals:", error);
+    return [];
+  }
+}
+
+// Save AI scaling prediction
+export async function saveAiScalingPrediction(prediction: InsertAiScalingPrediction): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(aiScalingPredictions).values(prediction);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to save AI prediction:", error);
+    return null;
+  }
+}
+
+// Get recent AI predictions for a rule
+export async function getAiPredictions(ruleId: number, limit: number = 10): Promise<typeof aiScalingPredictions.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    return await db.select().from(aiScalingPredictions)
+      .where(eq(aiScalingPredictions.ruleId, ruleId))
+      .orderBy(desc(aiScalingPredictions.createdAt))
+      .limit(limit);
+  } catch (error) {
+    console.error("[Database] Failed to get AI predictions:", error);
+    return [];
+  }
+}
+
+// Check if rule is in cooldown
+export async function isRuleInCooldown(ruleId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    const rule = await db.select().from(autoscalingRules)
+      .where(eq(autoscalingRules.id, ruleId))
+      .limit(1);
+
+    if (rule.length === 0 || !rule[0].lastScaledAt) {
+      return false;
+    }
+
+    const timeSinceLastScale = (Date.now() - rule[0].lastScaledAt.getTime()) / 1000;
+    return timeSinceLastScale < rule[0].cooldownSeconds;
+  } catch (error) {
+    console.error("[Database] Failed to check cooldown:", error);
+    return false;
+  }
+}
+
+// Update rule's last scaled timestamp
+export async function updateRuleLastScaled(ruleId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(autoscalingRules)
+      .set({ lastScaledAt: new Date() })
+      .where(eq(autoscalingRules.id, ruleId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update last scaled:", error);
     return false;
   }
 }

@@ -231,3 +231,78 @@ export const alertHistory = mysqlTable("alert_history", {
 
 export type AlertHistory = typeof alertHistory.$inferSelect;
 export type InsertAlertHistory = typeof alertHistory.$inferInsert;
+
+
+// Auto-scaling rules for AI-powered resource management
+export const autoscalingRules = mysqlTable("autoscaling_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  resourceType: mysqlEnum("resourceType", ["deployment", "container", "pod", "service"]).notNull(),
+  resourcePattern: varchar("resourcePattern", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }),
+  metricType: mysqlEnum("metricType", ["cpu", "memory", "requests", "custom"]).notNull(),
+  scaleUpThreshold: int("scaleUpThreshold").notNull(),
+  scaleDownThreshold: int("scaleDownThreshold").notNull(),
+  minReplicas: int("minReplicas").default(1).notNull(),
+  maxReplicas: int("maxReplicas").default(10).notNull(),
+  cooldownSeconds: int("cooldownSeconds").default(300).notNull(),
+  scaleUpStep: int("scaleUpStep").default(1).notNull(),
+  scaleDownStep: int("scaleDownStep").default(1).notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  requiresApproval: boolean("requiresApproval").default(false).notNull(),
+  aiAssisted: boolean("aiAssisted").default(true).notNull(),
+  lastScaledAt: timestamp("lastScaledAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AutoscalingRule = typeof autoscalingRules.$inferSelect;
+export type InsertAutoscalingRule = typeof autoscalingRules.$inferInsert;
+
+// Auto-scaling history for tracking scaling actions
+export const autoscalingHistory = mysqlTable("autoscaling_history", {
+  id: int("id").autoincrement().primaryKey(),
+  ruleId: int("ruleId").notNull(),
+  applicationId: int("applicationId"),
+  action: mysqlEnum("action", ["scale_up", "scale_down", "no_action", "pending_approval", "rejected", "failed"]).notNull(),
+  previousReplicas: int("previousReplicas").notNull(),
+  newReplicas: int("newReplicas").notNull(),
+  triggerMetric: varchar("triggerMetric", { length: 50 }).notNull(),
+  triggerValue: int("triggerValue").notNull(),
+  thresholdValue: int("thresholdValue").notNull(),
+  aiAnalysis: text("aiAnalysis"),
+  aiConfidence: int("aiConfidence"),
+  aiRecommendation: text("aiRecommendation"),
+  executedBy: mysqlEnum("executedBy", ["ai", "manual", "scheduled"]).default("ai").notNull(),
+  approvedBy: int("approvedBy"),
+  status: mysqlEnum("status", ["pending", "executing", "completed", "failed", "cancelled"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  executionTimeMs: int("executionTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type AutoscalingHistory = typeof autoscalingHistory.$inferSelect;
+export type InsertAutoscalingHistory = typeof autoscalingHistory.$inferInsert;
+
+// AI scaling predictions for proactive scaling
+export const aiScalingPredictions = mysqlTable("ai_scaling_predictions", {
+  id: int("id").autoincrement().primaryKey(),
+  ruleId: int("ruleId").notNull(),
+  applicationId: int("applicationId"),
+  predictedMetricValue: int("predictedMetricValue").notNull(),
+  predictedTime: timestamp("predictedTime").notNull(),
+  recommendedReplicas: int("recommendedReplicas").notNull(),
+  confidence: int("confidence").notNull(),
+  reasoning: text("reasoning").notNull(),
+  dataPointsAnalyzed: int("dataPointsAnalyzed").notNull(),
+  patternDetected: varchar("patternDetected", { length: 100 }),
+  isActedUpon: boolean("isActedUpon").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiScalingPrediction = typeof aiScalingPredictions.$inferSelect;
+export type InsertAiScalingPrediction = typeof aiScalingPredictions.$inferInsert;

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS autoscaling_history (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  ruleId INT NOT NULL,\n  applicationId INT,\n  action ENUM('scale_up', 'scale_down', 'no_action', 'pending_approval', 'rejected', 'failed') NOT NULL,\n  previousReplicas INT NOT NULL,\n  newReplicas INT NOT NULL,\n  triggerMetric VARCHAR(50) NOT NULL,\n  triggerValue INT NOT NULL,\n  thresholdValue INT NOT NULL,\n  aiAnalysis TEXT,\n  aiConfidence INT,\n  aiRecommendation TEXT,\n  executedBy ENUM('ai', 'manual', 'scheduled') DEFAULT 'ai' NOT NULL,\n  approvedBy INT,\n  status ENUM('pending', 'executing', 'completed', 'failed', 'cancelled') DEFAULT 'pending' NOT NULL,\n  errorMessage TEXT,\n  executionTimeMs INT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  completedAt TIMESTAMP NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS autoscaling_history (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  ruleId INT NOT NULL,\n  applicationId INT,\n  action ENUM('scale_up', 'scale_down', 'no_action', 'pending_approval', 'rejected', 'failed') NOT NULL,\n  previousReplicas INT NOT NULL,\n  newReplicas INT NOT NULL,\n  triggerMetric VARCHAR(50) NOT NULL,\n  triggerValue INT NOT NULL,\n  thresholdValue INT NOT NULL,\n  aiAnalysis TEXT,\n  aiConfidence INT,\n  aiRecommendation TEXT,\n  executedBy ENUM('ai', 'manual', 'scheduled') DEFAULT 'ai' NOT NULL,\n  approvedBy INT,\n  status ENUM('pending', 'executing', 'completed', 'failed', 'cancelled') DEFAULT 'pending' NOT NULL,\n  errorMessage TEXT,\n  executionTimeMs INT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  completedAt TIMESTAMP NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 196
+}

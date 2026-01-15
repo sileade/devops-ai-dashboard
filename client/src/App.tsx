@@ -18,6 +18,7 @@ import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
 import Topology from "./pages/Topology";
 import AlertSettings from "./pages/AlertSettings";
+import AutoScaling from "./pages/AutoScaling";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
         <Route path="/settings" component={Settings} />
         <Route path="/topology" component={Topology} />
         <Route path="/settings/alerts" component={AlertSettings} />
+        <Route path="/autoscaling" component={AutoScaling} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

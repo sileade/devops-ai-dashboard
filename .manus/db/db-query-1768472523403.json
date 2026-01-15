@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS ai_scaling_predictions (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  ruleId INT NOT NULL,\n  applicationId INT,\n  predictedMetricValue INT NOT NULL,\n  predictedTime TIMESTAMP NOT NULL,\n  recommendedReplicas INT NOT NULL,\n  confidence INT NOT NULL,\n  reasoning TEXT NOT NULL,\n  dataPointsAnalyzed INT NOT NULL,\n  patternDetected VARCHAR(100),\n  isActedUpon BOOLEAN DEFAULT FALSE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS ai_scaling_predictions (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  ruleId INT NOT NULL,\n  applicationId INT,\n  predictedMetricValue INT NOT NULL,\n  predictedTime TIMESTAMP NOT NULL,\n  recommendedReplicas INT NOT NULL,\n  confidence INT NOT NULL,\n  reasoning TEXT NOT NULL,\n  dataPointsAnalyzed INT NOT NULL,\n  patternDetected VARCHAR(100),\n  isActedUpon BOOLEAN DEFAULT FALSE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 191
+}
