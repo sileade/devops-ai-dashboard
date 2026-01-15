@@ -150,3 +150,22 @@
 - [x] Implement backend search endpoint
 - [x] Highlight search results in chat history
 - [x] Add search by date filter
+
+
+## Phase 5 - Security & Architecture Improvements
+
+### Rate Limiting
+- [x] Install express-rate-limit package
+- [x] Create rate limiting middleware
+- [x] Apply rate limiting to API routes
+- [x] Add different limits for different endpoints (auth, mutations, queries)
+
+### Router Decomposition
+- [x] Create server/routers/ directory
+- [x] Extract docker router to separate file
+- [x] Extract kubernetes router to separate file
+- [x] Extract ai router to separate file
+- [x] Extract dashboard router to separate file
+- [x] Extract connections router to separate file
+- [x] Update main routers.ts to import from modules
+- [x] Verify all tests still pass
