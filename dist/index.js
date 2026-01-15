@@ -243,6 +243,99 @@ var aiScalingPredictions = mysqlTable("ai_scaling_predictions", {
   isActedUpon: boolean("isActedUpon").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull()
 });
+var scheduledScaling = mysqlTable("scheduled_scaling", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetType: mysqlEnum("targetType", ["deployment", "container", "service"]).default("deployment").notNull(),
+  targetName: varchar("targetName", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }),
+  cronExpression: varchar("cronExpression", { length: 100 }).notNull(),
+  timezone: varchar("timezone", { length: 50 }).default("UTC").notNull(),
+  targetReplicas: int("targetReplicas").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastExecutedAt: timestamp("lastExecutedAt"),
+  nextExecutionAt: timestamp("nextExecutionAt"),
+  executionCount: int("executionCount").default(0).notNull(),
+  failureCount: int("failureCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var scheduledScalingHistory = mysqlTable("scheduled_scaling_history", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleId: int("scheduleId").notNull(),
+  previousReplicas: int("previousReplicas").notNull(),
+  targetReplicas: int("targetReplicas").notNull(),
+  actualReplicas: int("actualReplicas"),
+  status: mysqlEnum("status", ["pending", "executing", "completed", "failed", "skipped"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  executionTimeMs: int("executionTimeMs"),
+  scheduledFor: timestamp("scheduledFor").notNull(),
+  executedAt: timestamp("executedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var abTestExperiments = mysqlTable("ab_test_experiments", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetType: mysqlEnum("targetType", ["deployment", "container", "service"]).default("deployment").notNull(),
+  targetName: varchar("targetName", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }),
+  status: mysqlEnum("status", ["draft", "running", "paused", "completed", "cancelled"]).default("draft").notNull(),
+  // Variant A (Control)
+  variantAName: varchar("variantAName", { length: 100 }).default("Control").notNull(),
+  variantAScaleUpThreshold: int("variantAScaleUpThreshold").notNull(),
+  variantAScaleDownThreshold: int("variantAScaleDownThreshold").notNull(),
+  variantACooldown: int("variantACooldown").default(300).notNull(),
+  variantAMinReplicas: int("variantAMinReplicas").default(1).notNull(),
+  variantAMaxReplicas: int("variantAMaxReplicas").default(10).notNull(),
+  // Variant B (Treatment)
+  variantBName: varchar("variantBName", { length: 100 }).default("Treatment").notNull(),
+  variantBScaleUpThreshold: int("variantBScaleUpThreshold").notNull(),
+  variantBScaleDownThreshold: int("variantBScaleDownThreshold").notNull(),
+  variantBCooldown: int("variantBCooldown").default(300).notNull(),
+  variantBMinReplicas: int("variantBMinReplicas").default(1).notNull(),
+  variantBMaxReplicas: int("variantBMaxReplicas").default(10).notNull(),
+  // Traffic split
+  trafficSplitPercent: int("trafficSplitPercent").default(50).notNull(),
+  // % to variant B
+  // Duration
+  startedAt: timestamp("startedAt"),
+  endedAt: timestamp("endedAt"),
+  durationHours: int("durationHours").default(24).notNull(),
+  // Winner
+  winnerVariant: mysqlEnum("winnerVariant", ["A", "B", "inconclusive"]),
+  winnerConfidence: int("winnerConfidence"),
+  winnerReason: text("winnerReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var abTestMetrics = mysqlTable("ab_test_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  experimentId: int("experimentId").notNull(),
+  variant: mysqlEnum("variant", ["A", "B"]).notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  // Performance metrics
+  avgCpuPercent: int("avgCpuPercent").notNull(),
+  avgMemoryPercent: int("avgMemoryPercent").notNull(),
+  avgResponseTimeMs: int("avgResponseTimeMs"),
+  errorRate: int("errorRate"),
+  // per 10000 requests
+  // Scaling metrics
+  scaleUpCount: int("scaleUpCount").default(0).notNull(),
+  scaleDownCount: int("scaleDownCount").default(0).notNull(),
+  avgReplicaCount: int("avgReplicaCount").notNull(),
+  // Cost metrics (estimated)
+  estimatedCostUnits: int("estimatedCostUnits"),
+  // Stability metrics
+  oscillationCount: int("oscillationCount").default(0).notNull(),
+  // rapid up/down cycles
+  cooldownViolations: int("cooldownViolations").default(0).notNull()
+});
 
 // server/_core/env.ts
 var ENV = {
@@ -1048,6 +1141,320 @@ async function updateRuleLastScaled(ruleId) {
     return true;
   } catch (error) {
     console.error("[Database] Failed to update last scaled:", error);
+    return false;
+  }
+}
+async function getScheduledScalingRules(options) {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  try {
+    const conditions = [];
+    if (options?.applicationId) {
+      conditions.push(eq(scheduledScaling.applicationId, options.applicationId));
+    }
+    if (options?.enabledOnly) {
+      conditions.push(eq(scheduledScaling.isEnabled, true));
+    }
+    if (conditions.length > 0) {
+      return await db.select().from(scheduledScaling).where(and(...conditions)).orderBy(desc(scheduledScaling.createdAt));
+    }
+    return await db.select().from(scheduledScaling).orderBy(desc(scheduledScaling.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling rules:", error);
+    return [];
+  }
+}
+async function getScheduledScalingById(id) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const results = await db.select().from(scheduledScaling).where(eq(scheduledScaling.id, id)).limit(1);
+    return results[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling by ID:", error);
+    return null;
+  }
+}
+async function createScheduledScaling(rule) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const result = await db.insert(scheduledScaling).values(rule);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to create scheduled scaling:", error);
+    return null;
+  }
+}
+async function updateScheduledScaling(id, updates) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.update(scheduledScaling).set(updates).where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update scheduled scaling:", error);
+    return false;
+  }
+}
+async function deleteScheduledScaling(id) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.delete(scheduledScaling).where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete scheduled scaling:", error);
+    return false;
+  }
+}
+async function recordScheduledScalingExecution(record) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const result = await db.insert(scheduledScalingHistory).values(record);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record scheduled scaling execution:", error);
+    return null;
+  }
+}
+async function getScheduledScalingHistory(scheduleId, limit = 50) {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  try {
+    if (scheduleId) {
+      return await db.select().from(scheduledScalingHistory).where(eq(scheduledScalingHistory.scheduleId, scheduleId)).orderBy(desc(scheduledScalingHistory.createdAt)).limit(limit);
+    }
+    return await db.select().from(scheduledScalingHistory).orderBy(desc(scheduledScalingHistory.createdAt)).limit(limit);
+  } catch (error) {
+    console.error("[Database] Failed to get scheduled scaling history:", error);
+    return [];
+  }
+}
+async function updateScheduleExecutionStats(id, success) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    const schedule = await getScheduledScalingById(id);
+    if (!schedule) return false;
+    await db.update(scheduledScaling).set({
+      lastExecutedAt: /* @__PURE__ */ new Date(),
+      executionCount: schedule.executionCount + 1,
+      failureCount: success ? schedule.failureCount : schedule.failureCount + 1
+    }).where(eq(scheduledScaling.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update schedule stats:", error);
+    return false;
+  }
+}
+async function getAbTestExperiments(options) {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  try {
+    const conditions = [];
+    if (options?.applicationId) {
+      conditions.push(eq(abTestExperiments.applicationId, options.applicationId));
+    }
+    if (options?.status) {
+      conditions.push(eq(abTestExperiments.status, options.status));
+    }
+    if (conditions.length > 0) {
+      return await db.select().from(abTestExperiments).where(and(...conditions)).orderBy(desc(abTestExperiments.createdAt));
+    }
+    return await db.select().from(abTestExperiments).orderBy(desc(abTestExperiments.createdAt));
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test experiments:", error);
+    return [];
+  }
+}
+async function getAbTestExperimentById(id) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const results = await db.select().from(abTestExperiments).where(eq(abTestExperiments.id, id)).limit(1);
+    return results[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test by ID:", error);
+    return null;
+  }
+}
+async function createAbTestExperiment(experiment) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const result = await db.insert(abTestExperiments).values(experiment);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to create A/B test:", error);
+    return null;
+  }
+}
+async function updateAbTestExperiment(id, updates) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.update(abTestExperiments).set(updates).where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update A/B test:", error);
+    return false;
+  }
+}
+async function deleteAbTestExperiment(id) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.delete(abTestMetrics).where(eq(abTestMetrics.experimentId, id));
+    await db.delete(abTestExperiments).where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete A/B test:", error);
+    return false;
+  }
+}
+async function recordAbTestMetrics(metrics) {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  try {
+    const result = await db.insert(abTestMetrics).values(metrics);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record A/B test metrics:", error);
+    return null;
+  }
+}
+async function getAbTestMetrics(experimentId, variant) {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  try {
+    const conditions = [eq(abTestMetrics.experimentId, experimentId)];
+    if (variant) {
+      conditions.push(eq(abTestMetrics.variant, variant));
+    }
+    return await db.select().from(abTestMetrics).where(and(...conditions)).orderBy(desc(abTestMetrics.timestamp));
+  } catch (error) {
+    console.error("[Database] Failed to get A/B test metrics:", error);
+    return [];
+  }
+}
+async function calculateAbTestStats(experimentId) {
+  const db = await getDb();
+  const defaultResult = {
+    variantA: { avgCpu: 0, avgMemory: 0, avgReplicas: 0, totalScaleOps: 0, oscillations: 0 },
+    variantB: { avgCpu: 0, avgMemory: 0, avgReplicas: 0, totalScaleOps: 0, oscillations: 0 },
+    sampleSize: { A: 0, B: 0 },
+    recommendation: "inconclusive",
+    confidence: 0
+  };
+  if (!db) {
+    return defaultResult;
+  }
+  try {
+    const metricsA = await getAbTestMetrics(experimentId, "A");
+    const metricsB = await getAbTestMetrics(experimentId, "B");
+    if (metricsA.length === 0 || metricsB.length === 0) {
+      return defaultResult;
+    }
+    const calcStats = (metrics) => ({
+      avgCpu: Math.round(metrics.reduce((sum, m) => sum + m.avgCpuPercent, 0) / metrics.length),
+      avgMemory: Math.round(metrics.reduce((sum, m) => sum + m.avgMemoryPercent, 0) / metrics.length),
+      avgReplicas: Math.round(metrics.reduce((sum, m) => sum + m.avgReplicaCount, 0) / metrics.length),
+      totalScaleOps: metrics.reduce((sum, m) => sum + m.scaleUpCount + m.scaleDownCount, 0),
+      oscillations: metrics.reduce((sum, m) => sum + m.oscillationCount, 0)
+    });
+    const statsA = calcStats(metricsA);
+    const statsB = calcStats(metricsB);
+    const scoreA = statsA.oscillations * 10 + statsA.avgReplicas;
+    const scoreB = statsB.oscillations * 10 + statsB.avgReplicas;
+    let recommendation = "inconclusive";
+    let confidence = 0;
+    const diff = Math.abs(scoreA - scoreB);
+    const minSamples = 10;
+    if (metricsA.length >= minSamples && metricsB.length >= minSamples) {
+      if (diff > 5) {
+        recommendation = scoreA < scoreB ? "A" : "B";
+        confidence = Math.min(95, 50 + diff * 5);
+      } else if (diff > 2) {
+        recommendation = scoreA < scoreB ? "A" : "B";
+        confidence = Math.min(70, 40 + diff * 10);
+      }
+    }
+    return {
+      variantA: statsA,
+      variantB: statsB,
+      sampleSize: { A: metricsA.length, B: metricsB.length },
+      recommendation,
+      confidence
+    };
+  } catch (error) {
+    console.error("[Database] Failed to calculate A/B test stats:", error);
+    return defaultResult;
+  }
+}
+async function startAbTest(id) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.update(abTestExperiments).set({
+      status: "running",
+      startedAt: /* @__PURE__ */ new Date()
+    }).where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to start A/B test:", error);
+    return false;
+  }
+}
+async function completeAbTest(id, winner, confidence, reason) {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  try {
+    await db.update(abTestExperiments).set({
+      status: "completed",
+      endedAt: /* @__PURE__ */ new Date(),
+      winnerVariant: winner,
+      winnerConfidence: confidence,
+      winnerReason: reason
+    }).where(eq(abTestExperiments.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to complete A/B test:", error);
     return false;
   }
 }
@@ -4050,6 +4457,433 @@ var autoscalingRouter = router({
   })
 });
 
+// server/routers/scheduledScaling.ts
+import { z as z9 } from "zod";
+var cronExpressionSchema = z9.string().regex(
+  /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/,
+  "Invalid cron expression"
+);
+var timezones = [
+  "UTC",
+  "America/New_York",
+  "America/Los_Angeles",
+  "America/Chicago",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Moscow",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Asia/Singapore",
+  "Australia/Sydney"
+];
+var scheduledScalingRouter = router({
+  // Get all scheduled scaling rules
+  list: publicProcedure.input(z9.object({
+    applicationId: z9.number().optional(),
+    enabledOnly: z9.boolean().optional()
+  }).optional()).query(async ({ input }) => {
+    return await getScheduledScalingRules(input);
+  }),
+  // Get single scheduled scaling rule
+  getById: publicProcedure.input(z9.object({ id: z9.number() })).query(async ({ input }) => {
+    return await getScheduledScalingById(input.id);
+  }),
+  // Create scheduled scaling rule
+  create: publicProcedure.input(z9.object({
+    name: z9.string().min(1).max(255),
+    description: z9.string().optional(),
+    targetType: z9.enum(["deployment", "container", "service"]),
+    targetName: z9.string().min(1).max(255),
+    namespace: z9.string().optional(),
+    cronExpression: z9.string().min(1),
+    // Simplified validation
+    timezone: z9.string().default("UTC"),
+    targetReplicas: z9.number().min(0).max(100),
+    isEnabled: z9.boolean().default(true),
+    applicationId: z9.number().optional()
+  })).mutation(async ({ input }) => {
+    const nextExecution = calculateNextExecution(input.cronExpression, input.timezone);
+    const id = await createScheduledScaling({
+      ...input,
+      nextExecutionAt: nextExecution
+    });
+    if (!id) {
+      throw new Error("Failed to create scheduled scaling rule");
+    }
+    return { id, success: true };
+  }),
+  // Update scheduled scaling rule
+  update: publicProcedure.input(z9.object({
+    id: z9.number(),
+    name: z9.string().min(1).max(255).optional(),
+    description: z9.string().optional(),
+    cronExpression: z9.string().optional(),
+    timezone: z9.string().optional(),
+    targetReplicas: z9.number().min(0).max(100).optional(),
+    isEnabled: z9.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const { id, ...updates } = input;
+    if (updates.cronExpression || updates.timezone) {
+      const existing = await getScheduledScalingById(id);
+      if (existing) {
+        const cron = updates.cronExpression || existing.cronExpression;
+        const tz = updates.timezone || existing.timezone;
+        updates.nextExecutionAt = calculateNextExecution(cron, tz);
+      }
+    }
+    const success = await updateScheduledScaling(id, updates);
+    return { success };
+  }),
+  // Delete scheduled scaling rule
+  delete: publicProcedure.input(z9.object({ id: z9.number() })).mutation(async ({ input }) => {
+    const success = await deleteScheduledScaling(input.id);
+    return { success };
+  }),
+  // Toggle enabled state
+  toggle: publicProcedure.input(z9.object({ id: z9.number() })).mutation(async ({ input }) => {
+    const schedule = await getScheduledScalingById(input.id);
+    if (!schedule) {
+      throw new Error("Schedule not found");
+    }
+    const success = await updateScheduledScaling(input.id, {
+      isEnabled: !schedule.isEnabled
+    });
+    return { success, isEnabled: !schedule.isEnabled };
+  }),
+  // Get execution history
+  history: publicProcedure.input(z9.object({
+    scheduleId: z9.number().optional(),
+    limit: z9.number().min(1).max(100).default(50)
+  }).optional()).query(async ({ input }) => {
+    return await getScheduledScalingHistory(input?.scheduleId, input?.limit);
+  }),
+  // Execute scheduled scaling manually
+  executeNow: publicProcedure.input(z9.object({ id: z9.number() })).mutation(async ({ input }) => {
+    const schedule = await getScheduledScalingById(input.id);
+    if (!schedule) {
+      throw new Error("Schedule not found");
+    }
+    const startTime = Date.now();
+    let previousReplicas = 0;
+    let actualReplicas = 0;
+    let errorMessage;
+    let status = "completed";
+    try {
+      if (schedule.targetType === "deployment") {
+        const deployments = await listDeployments(schedule.namespace || "default");
+        const deployment = deployments.find((d) => d.name === schedule.targetName);
+        previousReplicas = deployment?.replicas || 0;
+      }
+      if (schedule.targetType === "deployment") {
+        await scaleDeployment(
+          schedule.targetName,
+          schedule.namespace || "default",
+          schedule.targetReplicas
+        );
+        actualReplicas = schedule.targetReplicas;
+      } else {
+        throw new Error(`Scaling for ${schedule.targetType} not yet implemented`);
+      }
+    } catch (error) {
+      status = "failed";
+      errorMessage = error instanceof Error ? error.message : "Unknown error";
+    }
+    const executionTimeMs = Date.now() - startTime;
+    await recordScheduledScalingExecution({
+      scheduleId: input.id,
+      previousReplicas,
+      targetReplicas: schedule.targetReplicas,
+      actualReplicas: status === "completed" ? actualReplicas : void 0,
+      status,
+      errorMessage,
+      executionTimeMs,
+      scheduledFor: /* @__PURE__ */ new Date(),
+      executedAt: /* @__PURE__ */ new Date()
+    });
+    await updateScheduleExecutionStats(input.id, status === "completed");
+    return {
+      success: status === "completed",
+      previousReplicas,
+      newReplicas: actualReplicas,
+      executionTimeMs,
+      error: errorMessage
+    };
+  }),
+  // Get available timezones
+  getTimezones: publicProcedure.query(() => {
+    return timezones;
+  }),
+  // Preview next executions
+  previewExecutions: publicProcedure.input(z9.object({
+    cronExpression: z9.string(),
+    timezone: z9.string().default("UTC"),
+    count: z9.number().min(1).max(10).default(5)
+  })).query(({ input }) => {
+    const executions = [];
+    let current = /* @__PURE__ */ new Date();
+    for (let i = 0; i < input.count; i++) {
+      const next = calculateNextExecution(input.cronExpression, input.timezone, current);
+      if (next) {
+        executions.push(next);
+        current = new Date(next.getTime() + 6e4);
+      }
+    }
+    return executions;
+  })
+});
+function calculateNextExecution(cronExpression, timezone, from) {
+  try {
+    const parts = cronExpression.split(" ");
+    if (parts.length !== 5) return null;
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+    const now = from || /* @__PURE__ */ new Date();
+    const next = new Date(now);
+    next.setSeconds(0);
+    next.setMilliseconds(0);
+    if (minute !== "*") {
+      const targetMinute = parseInt(minute);
+      if (!isNaN(targetMinute)) {
+        if (next.getMinutes() >= targetMinute) {
+          next.setHours(next.getHours() + 1);
+        }
+        next.setMinutes(targetMinute);
+      }
+    }
+    if (hour !== "*") {
+      const targetHour = parseInt(hour);
+      if (!isNaN(targetHour)) {
+        if (next.getHours() > targetHour || next.getHours() === targetHour && next.getMinutes() > parseInt(minute)) {
+          next.setDate(next.getDate() + 1);
+        }
+        next.setHours(targetHour);
+      }
+    }
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+// server/routers/abTesting.ts
+import { z as z10 } from "zod";
+var abTestingRouter = router({
+  // Get all experiments
+  list: publicProcedure.input(z10.object({
+    applicationId: z10.number().optional(),
+    status: z10.enum(["draft", "running", "paused", "completed", "cancelled"]).optional()
+  }).optional()).query(async ({ input }) => {
+    return await getAbTestExperiments(input);
+  }),
+  // Get single experiment
+  getById: publicProcedure.input(z10.object({ id: z10.number() })).query(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.id);
+    if (!experiment) return null;
+    const stats = await calculateAbTestStats(input.id);
+    return { ...experiment, stats };
+  }),
+  // Create experiment
+  create: publicProcedure.input(z10.object({
+    name: z10.string().min(1).max(255),
+    description: z10.string().optional(),
+    targetType: z10.enum(["deployment", "container", "service"]),
+    targetName: z10.string().min(1).max(255),
+    namespace: z10.string().optional(),
+    // Variant A
+    variantAName: z10.string().default("Control"),
+    variantAScaleUpThreshold: z10.number().min(1).max(100),
+    variantAScaleDownThreshold: z10.number().min(1).max(100),
+    variantACooldown: z10.number().min(60).max(3600).default(300),
+    variantAMinReplicas: z10.number().min(0).max(100).default(1),
+    variantAMaxReplicas: z10.number().min(1).max(100).default(10),
+    // Variant B
+    variantBName: z10.string().default("Treatment"),
+    variantBScaleUpThreshold: z10.number().min(1).max(100),
+    variantBScaleDownThreshold: z10.number().min(1).max(100),
+    variantBCooldown: z10.number().min(60).max(3600).default(300),
+    variantBMinReplicas: z10.number().min(0).max(100).default(1),
+    variantBMaxReplicas: z10.number().min(1).max(100).default(10),
+    // Settings
+    trafficSplitPercent: z10.number().min(10).max(90).default(50),
+    durationHours: z10.number().min(1).max(168).default(24),
+    applicationId: z10.number().optional()
+  })).mutation(async ({ input }) => {
+    const id = await createAbTestExperiment(input);
+    if (!id) {
+      throw new Error("Failed to create A/B test experiment");
+    }
+    return { id, success: true };
+  }),
+  // Update experiment
+  update: publicProcedure.input(z10.object({
+    id: z10.number(),
+    name: z10.string().min(1).max(255).optional(),
+    description: z10.string().optional(),
+    variantAName: z10.string().optional(),
+    variantBName: z10.string().optional(),
+    trafficSplitPercent: z10.number().min(10).max(90).optional(),
+    durationHours: z10.number().min(1).max(168).optional()
+  })).mutation(async ({ input }) => {
+    const { id, ...updates } = input;
+    const success = await updateAbTestExperiment(id, updates);
+    return { success };
+  }),
+  // Delete experiment
+  delete: publicProcedure.input(z10.object({ id: z10.number() })).mutation(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.id);
+    if (experiment?.status === "running") {
+      throw new Error("Cannot delete a running experiment. Stop it first.");
+    }
+    const success = await deleteAbTestExperiment(input.id);
+    return { success };
+  }),
+  // Start experiment
+  start: publicProcedure.input(z10.object({ id: z10.number() })).mutation(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.id);
+    if (!experiment) {
+      throw new Error("Experiment not found");
+    }
+    if (experiment.status !== "draft" && experiment.status !== "paused") {
+      throw new Error("Can only start draft or paused experiments");
+    }
+    const success = await startAbTest(input.id);
+    return { success };
+  }),
+  // Pause experiment
+  pause: publicProcedure.input(z10.object({ id: z10.number() })).mutation(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.id);
+    if (!experiment) {
+      throw new Error("Experiment not found");
+    }
+    if (experiment.status !== "running") {
+      throw new Error("Can only pause running experiments");
+    }
+    const success = await updateAbTestExperiment(input.id, { status: "paused" });
+    return { success };
+  }),
+  // Stop and analyze experiment
+  complete: publicProcedure.input(z10.object({ id: z10.number() })).mutation(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.id);
+    if (!experiment) {
+      throw new Error("Experiment not found");
+    }
+    const stats = await calculateAbTestStats(input.id);
+    let aiReason = "";
+    try {
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert in autoscaling optimization. Analyze A/B test results and provide a concise recommendation."
+          },
+          {
+            role: "user",
+            content: `Analyze this A/B test for autoscaling rules:
+
+Experiment: ${experiment.name}
+Target: ${experiment.targetName}
+
+Variant A (${experiment.variantAName}):
+- Scale Up Threshold: ${experiment.variantAScaleUpThreshold}%
+- Scale Down Threshold: ${experiment.variantAScaleDownThreshold}%
+- Cooldown: ${experiment.variantACooldown}s
+- Replicas: ${experiment.variantAMinReplicas}-${experiment.variantAMaxReplicas}
+- Results: Avg CPU ${stats.variantA.avgCpu}%, Avg Memory ${stats.variantA.avgMemory}%, Avg Replicas ${stats.variantA.avgReplicas}, Scale Ops ${stats.variantA.totalScaleOps}, Oscillations ${stats.variantA.oscillations}
+
+Variant B (${experiment.variantBName}):
+- Scale Up Threshold: ${experiment.variantBScaleUpThreshold}%
+- Scale Down Threshold: ${experiment.variantBScaleDownThreshold}%
+- Cooldown: ${experiment.variantBCooldown}s
+- Replicas: ${experiment.variantBMinReplicas}-${experiment.variantBMaxReplicas}
+- Results: Avg CPU ${stats.variantB.avgCpu}%, Avg Memory ${stats.variantB.avgMemory}%, Avg Replicas ${stats.variantB.avgReplicas}, Scale Ops ${stats.variantB.totalScaleOps}, Oscillations ${stats.variantB.oscillations}
+
+Sample sizes: A=${stats.sampleSize.A}, B=${stats.sampleSize.B}
+
+Provide a 2-3 sentence recommendation on which variant performed better and why.`
+          }
+        ]
+      });
+      const content = response.choices[0]?.message?.content;
+      aiReason = typeof content === "string" ? content : "Analysis completed.";
+    } catch {
+      aiReason = `Based on metrics analysis: Variant ${stats.recommendation} showed ${stats.recommendation === "A" ? "fewer" : "more"} oscillations and ${stats.recommendation === "A" ? "lower" : "higher"} average replica count.`;
+    }
+    const success = await completeAbTest(
+      input.id,
+      stats.recommendation,
+      stats.confidence,
+      aiReason
+    );
+    return {
+      success,
+      winner: stats.recommendation,
+      confidence: stats.confidence,
+      reason: aiReason,
+      stats
+    };
+  }),
+  // Get experiment metrics
+  getMetrics: publicProcedure.input(z10.object({
+    experimentId: z10.number(),
+    variant: z10.enum(["A", "B"]).optional()
+  })).query(async ({ input }) => {
+    return await getAbTestMetrics(input.experimentId, input.variant);
+  }),
+  // Record metrics (called by autoscaling engine)
+  recordMetrics: publicProcedure.input(z10.object({
+    experimentId: z10.number(),
+    variant: z10.enum(["A", "B"]),
+    avgCpuPercent: z10.number(),
+    avgMemoryPercent: z10.number(),
+    avgResponseTimeMs: z10.number().optional(),
+    errorRate: z10.number().optional(),
+    scaleUpCount: z10.number().default(0),
+    scaleDownCount: z10.number().default(0),
+    avgReplicaCount: z10.number(),
+    estimatedCostUnits: z10.number().optional(),
+    oscillationCount: z10.number().default(0),
+    cooldownViolations: z10.number().default(0)
+  })).mutation(async ({ input }) => {
+    const id = await recordAbTestMetrics(input);
+    return { id, success: !!id };
+  }),
+  // Get statistics
+  getStats: publicProcedure.input(z10.object({ experimentId: z10.number() })).query(async ({ input }) => {
+    return await calculateAbTestStats(input.experimentId);
+  }),
+  // Apply winner configuration
+  applyWinner: publicProcedure.input(z10.object({ experimentId: z10.number() })).mutation(async ({ input }) => {
+    const experiment = await getAbTestExperimentById(input.experimentId);
+    if (!experiment) {
+      throw new Error("Experiment not found");
+    }
+    if (experiment.status !== "completed" || !experiment.winnerVariant) {
+      throw new Error("Experiment must be completed with a winner to apply");
+    }
+    if (experiment.winnerVariant === "inconclusive") {
+      throw new Error("Cannot apply inconclusive results");
+    }
+    const winnerConfig = experiment.winnerVariant === "A" ? {
+      scaleUpThreshold: experiment.variantAScaleUpThreshold,
+      scaleDownThreshold: experiment.variantAScaleDownThreshold,
+      cooldown: experiment.variantACooldown,
+      minReplicas: experiment.variantAMinReplicas,
+      maxReplicas: experiment.variantAMaxReplicas
+    } : {
+      scaleUpThreshold: experiment.variantBScaleUpThreshold,
+      scaleDownThreshold: experiment.variantBScaleDownThreshold,
+      cooldown: experiment.variantBCooldown,
+      minReplicas: experiment.variantBMinReplicas,
+      maxReplicas: experiment.variantBMaxReplicas
+    };
+    return {
+      success: true,
+      winnerVariant: experiment.winnerVariant,
+      config: winnerConfig,
+      message: `Apply these settings to your autoscaling rule for ${experiment.targetName}`
+    };
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -4063,7 +4897,9 @@ var appRouter = router({
   metrics: metricsRouter,
   alertThresholds: alertThresholdsRouter,
   alertHistory: alertHistoryRouter,
-  autoscaling: autoscalingRouter
+  autoscaling: autoscalingRouter,
+  scheduledScaling: scheduledScalingRouter,
+  abTesting: abTestingRouter
 });
 
 // server/_core/context.ts
