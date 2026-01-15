@@ -22,6 +22,13 @@
       "when": 1768403295836,
       "tag": "0002_brave_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1768471530099,
+      "tag": "0003_tired_spiral",
+      "breakpoints": true
     }
   ]
 }

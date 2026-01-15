@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
+import { usePushNotifications } from "./usePushNotifications";
 
 // Types for real-time data
 export interface Container {
@@ -129,6 +130,18 @@ export function useRealTimeUpdates() {
       setState(prev => ({
         ...prev,
         alerts: parsedAlerts,
+      }));
+    });
+
+    // New alert - trigger push notification
+    socket.on("alert:new", (alert: Alert) => {
+      const parsedAlert = {
+        ...alert,
+        timestamp: new Date(alert.timestamp),
+      };
+      setState(prev => ({
+        ...prev,
+        alerts: [parsedAlert, ...prev.alerts],
       }));
     });
 

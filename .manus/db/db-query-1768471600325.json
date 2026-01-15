@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `alert_thresholds` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `applicationId` int,\n  `userId` int,\n  `name` varchar(255) NOT NULL,\n  `metricType` enum('cpu','memory','disk','network') NOT NULL,\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourcePattern` varchar(255),\n  `warningThreshold` int NOT NULL,\n  `criticalThreshold` int NOT NULL,\n  `isEnabled` boolean NOT NULL DEFAULT true,\n  `cooldownMinutes` int NOT NULL DEFAULT 5,\n  `lastTriggered` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `alert_thresholds_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS `alert_thresholds` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `applicationId` int,\n  `userId` int,\n  `name` varchar(255) NOT NULL,\n  `metricType` enum('cpu','memory','disk','network') NOT NULL,\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourcePattern` varchar(255),\n  `warningThreshold` int NOT NULL,\n  `criticalThreshold` int NOT NULL,\n  `isEnabled` boolean NOT NULL DEFAULT true,\n  `cooldownMinutes` int NOT NULL DEFAULT 5,\n  `lastTriggered` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `alert_thresholds_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 229
+}

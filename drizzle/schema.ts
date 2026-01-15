@@ -168,3 +168,66 @@ export const chatSessions = mysqlTable("chat_sessions", {
 
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = typeof chatSessions.$inferInsert;
+
+// Metrics history for long-term trend analysis
+export const metricsHistory = mysqlTable("metrics_history", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  source: mysqlEnum("source", ["docker", "kubernetes", "system"]).default("system").notNull(),
+  resourceType: mysqlEnum("resourceType", ["container", "pod", "node", "cluster"]).default("cluster").notNull(),
+  resourceId: varchar("resourceId", { length: 255 }),
+  cpuPercent: int("cpuPercent").notNull(),
+  memoryPercent: int("memoryPercent").notNull(),
+  memoryUsedMb: int("memoryUsedMb"),
+  memoryTotalMb: int("memoryTotalMb"),
+  networkRxBytes: int("networkRxBytes"),
+  networkTxBytes: int("networkTxBytes"),
+  diskUsedGb: int("diskUsedGb"),
+  diskTotalGb: int("diskTotalGb"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export type MetricsHistory = typeof metricsHistory.$inferSelect;
+export type InsertMetricsHistory = typeof metricsHistory.$inferInsert;
+
+// Alert thresholds for configurable alerting
+export const alertThresholds = mysqlTable("alert_thresholds", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  metricType: mysqlEnum("metricType", ["cpu", "memory", "disk", "network"]).notNull(),
+  resourceType: mysqlEnum("resourceType", ["container", "pod", "node", "cluster"]).default("cluster").notNull(),
+  resourcePattern: varchar("resourcePattern", { length: 255 }),
+  warningThreshold: int("warningThreshold").notNull(),
+  criticalThreshold: int("criticalThreshold").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  cooldownMinutes: int("cooldownMinutes").default(5).notNull(),
+  lastTriggered: timestamp("lastTriggered"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AlertThreshold = typeof alertThresholds.$inferSelect;
+export type InsertAlertThreshold = typeof alertThresholds.$inferInsert;
+
+// Alert history for tracking triggered alerts
+export const alertHistory = mysqlTable("alert_history", {
+  id: int("id").autoincrement().primaryKey(),
+  thresholdId: int("thresholdId"),
+  applicationId: int("applicationId"),
+  severity: mysqlEnum("severity", ["warning", "critical"]).notNull(),
+  metricType: mysqlEnum("metricType", ["cpu", "memory", "disk", "network"]).notNull(),
+  resourceType: mysqlEnum("resourceType", ["container", "pod", "node", "cluster"]).default("cluster").notNull(),
+  resourceId: varchar("resourceId", { length: 255 }),
+  currentValue: int("currentValue").notNull(),
+  thresholdValue: int("thresholdValue").notNull(),
+  message: text("message").notNull(),
+  isAcknowledged: boolean("isAcknowledged").default(false).notNull(),
+  acknowledgedBy: int("acknowledgedBy"),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AlertHistory = typeof alertHistory.$inferSelect;
+export type InsertAlertHistory = typeof alertHistory.$inferInsert;

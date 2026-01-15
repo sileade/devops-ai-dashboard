@@ -197,3 +197,26 @@
 - [x] Create Network I/O chart
 - [x] Add time range selector (1h, 6h, 12h, 24h)
 - [x] Integrate charts into Dashboard
+
+## Phase 7 - Push Notifications, Metrics History & Alert Thresholds
+
+### Browser Push Notifications
+- [x] Create Service Worker for push notifications
+- [x] Add notification permission request UI
+- [x] Implement push notification trigger for critical alerts
+- [x] Add notification settings (enable/disable, sound)
+- [x] Create usePushNotifications hook
+
+### Metrics History in Database
+- [x] Create metrics_history table in database schema
+- [x] Implement metrics collection service
+- [x] Create API endpoints for historical metrics
+- [x] Update MetricsChart to fetch from database
+- [x] Add data retention policy (cleanup old records)
+
+### Configurable Alert Thresholds
+- [x] Create alert_thresholds table in database
+- [x] Create settings UI for threshold configuration
+- [x] Implement threshold-based alert generation
+- [x] Add default thresholds (CPU 80%/95%, Memory 80%/95%)
+- [x] Create API endpoints for threshold management

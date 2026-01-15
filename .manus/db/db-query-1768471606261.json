@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `alert_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `thresholdId` int,\n  `applicationId` int,\n  `severity` enum('warning','critical') NOT NULL,\n  `metricType` enum('cpu','memory','disk','network') NOT NULL,\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourceId` varchar(255),\n  `currentValue` int NOT NULL,\n  `thresholdValue` int NOT NULL,\n  `message` text NOT NULL,\n  `isAcknowledged` boolean NOT NULL DEFAULT false,\n  `acknowledgedBy` int,\n  `acknowledgedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `alert_history_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS `alert_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `thresholdId` int,\n  `applicationId` int,\n  `severity` enum('warning','critical') NOT NULL,\n  `metricType` enum('cpu','memory','disk','network') NOT NULL,\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourceId` varchar(255),\n  `currentValue` int NOT NULL,\n  `thresholdValue` int NOT NULL,\n  `message` text NOT NULL,\n  `isAcknowledged` boolean NOT NULL DEFAULT false,\n  `acknowledgedBy` int,\n  `acknowledgedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `alert_history_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 225
+}

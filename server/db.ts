@@ -1,6 +1,6 @@
 import { eq, and, desc, like, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession } from "../drizzle/schema";
+import { InsertUser, users, chatMessages, chatSessions, InsertChatMessage, InsertChatSession, metricsHistory, alertThresholds, alertHistory, InsertMetricsHistory, InsertAlertThreshold, InsertAlertHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -470,5 +470,384 @@ export async function exportChatHistory(
   } catch (error) {
     console.error("[Database] Failed to export chat history:", error);
     return format === "json" ? "[]" : "# Export failed";
+  }
+}
+
+
+// ============================================
+// METRICS HISTORY FUNCTIONS
+// ============================================
+
+// Save a metrics snapshot
+export async function saveMetricsSnapshot(metrics: InsertMetricsHistory): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot save metrics: database not available");
+    return null;
+  }
+
+  try {
+    const result = await db.insert(metricsHistory).values(metrics);
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to save metrics:", error);
+    return null;
+  }
+}
+
+// Get metrics history with time range
+export async function getMetricsHistory(options: {
+  source?: "docker" | "kubernetes" | "system";
+  resourceType?: "container" | "pod" | "node" | "cluster";
+  resourceId?: string;
+  startTime?: Date;
+  endTime?: Date;
+  limit?: number;
+}): Promise<typeof metricsHistory.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options.source) {
+      conditions.push(eq(metricsHistory.source, options.source));
+    }
+    if (options.resourceType) {
+      conditions.push(eq(metricsHistory.resourceType, options.resourceType));
+    }
+    if (options.resourceId) {
+      conditions.push(eq(metricsHistory.resourceId, options.resourceId));
+    }
+    if (options.startTime) {
+      conditions.push(gte(metricsHistory.timestamp, options.startTime));
+    }
+    if (options.endTime) {
+      conditions.push(lte(metricsHistory.timestamp, options.endTime));
+    }
+
+    const query = db.select().from(metricsHistory);
+    
+    if (conditions.length > 0) {
+      return await query
+        .where(and(...conditions))
+        .orderBy(desc(metricsHistory.timestamp))
+        .limit(options.limit || 1000);
+    }
+    
+    return await query
+      .orderBy(desc(metricsHistory.timestamp))
+      .limit(options.limit || 1000);
+  } catch (error) {
+    console.error("[Database] Failed to get metrics history:", error);
+    return [];
+  }
+}
+
+// Get aggregated metrics for a time period
+export async function getAggregatedMetrics(hours: number = 24): Promise<{
+  avgCpu: number;
+  avgMemory: number;
+  maxCpu: number;
+  maxMemory: number;
+  dataPoints: number;
+}> {
+  const db = await getDb();
+  if (!db) {
+    return { avgCpu: 0, avgMemory: 0, maxCpu: 0, maxMemory: 0, dataPoints: 0 };
+  }
+
+  try {
+    const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+    
+    const results = await db.select().from(metricsHistory)
+      .where(gte(metricsHistory.timestamp, startTime))
+      .orderBy(desc(metricsHistory.timestamp));
+
+    if (results.length === 0) {
+      return { avgCpu: 0, avgMemory: 0, maxCpu: 0, maxMemory: 0, dataPoints: 0 };
+    }
+
+    const totalCpu = results.reduce((sum, r) => sum + r.cpuPercent, 0);
+    const totalMemory = results.reduce((sum, r) => sum + r.memoryPercent, 0);
+    const maxCpu = Math.max(...results.map(r => r.cpuPercent));
+    const maxMemory = Math.max(...results.map(r => r.memoryPercent));
+
+    return {
+      avgCpu: Math.round(totalCpu / results.length),
+      avgMemory: Math.round(totalMemory / results.length),
+      maxCpu,
+      maxMemory,
+      dataPoints: results.length,
+    };
+  } catch (error) {
+    console.error("[Database] Failed to get aggregated metrics:", error);
+    return { avgCpu: 0, avgMemory: 0, maxCpu: 0, maxMemory: 0, dataPoints: 0 };
+  }
+}
+
+// Clean up old metrics (data retention)
+export async function cleanupOldMetrics(retentionDays: number = 30): Promise<number> {
+  const db = await getDb();
+  if (!db) {
+    return 0;
+  }
+
+  try {
+    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const result = await db.delete(metricsHistory)
+      .where(lte(metricsHistory.timestamp, cutoffDate));
+    
+    return result[0].affectedRows || 0;
+  } catch (error) {
+    console.error("[Database] Failed to cleanup old metrics:", error);
+    return 0;
+  }
+}
+
+// ============================================
+// ALERT THRESHOLDS FUNCTIONS
+// ============================================
+
+// Get all alert thresholds
+export async function getAlertThresholds(options?: {
+  metricType?: "cpu" | "memory" | "disk" | "network";
+  resourceType?: "container" | "pod" | "node" | "cluster";
+  enabledOnly?: boolean;
+}): Promise<typeof alertThresholds.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.metricType) {
+      conditions.push(eq(alertThresholds.metricType, options.metricType));
+    }
+    if (options?.resourceType) {
+      conditions.push(eq(alertThresholds.resourceType, options.resourceType));
+    }
+    if (options?.enabledOnly) {
+      conditions.push(eq(alertThresholds.isEnabled, true));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(alertThresholds)
+        .where(and(...conditions))
+        .orderBy(alertThresholds.name);
+    }
+    
+    return await db.select().from(alertThresholds)
+      .orderBy(alertThresholds.name);
+  } catch (error) {
+    console.error("[Database] Failed to get alert thresholds:", error);
+    return [];
+  }
+}
+
+// Create or update alert threshold
+export async function upsertAlertThreshold(threshold: InsertAlertThreshold): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    if (threshold.id) {
+      await db.update(alertThresholds)
+        .set(threshold)
+        .where(eq(alertThresholds.id, threshold.id));
+      return threshold.id;
+    } else {
+      const result = await db.insert(alertThresholds).values(threshold);
+      return result[0].insertId;
+    }
+  } catch (error) {
+    console.error("[Database] Failed to upsert alert threshold:", error);
+    return null;
+  }
+}
+
+// Update threshold enabled status
+export async function toggleAlertThreshold(id: number, isEnabled: boolean): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(alertThresholds)
+      .set({ isEnabled })
+      .where(eq(alertThresholds.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to toggle alert threshold:", error);
+    return false;
+  }
+}
+
+// Delete alert threshold
+export async function deleteAlertThreshold(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.delete(alertThresholds).where(eq(alertThresholds.id, id));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete alert threshold:", error);
+    return false;
+  }
+}
+
+// ============================================
+// ALERT HISTORY FUNCTIONS
+// ============================================
+
+// Record a triggered alert
+export async function recordAlert(alert: InsertAlertHistory): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.insert(alertHistory).values(alert);
+    
+    // Update last triggered time on threshold
+    if (alert.thresholdId) {
+      await db.update(alertThresholds)
+        .set({ lastTriggered: new Date() })
+        .where(eq(alertThresholds.id, alert.thresholdId));
+    }
+    
+    return result[0].insertId;
+  } catch (error) {
+    console.error("[Database] Failed to record alert:", error);
+    return null;
+  }
+}
+
+// Get alert history
+export async function getAlertHistory(options?: {
+  severity?: "warning" | "critical";
+  metricType?: "cpu" | "memory" | "disk" | "network";
+  acknowledgedOnly?: boolean;
+  unacknowledgedOnly?: boolean;
+  startTime?: Date;
+  endTime?: Date;
+  limit?: number;
+}): Promise<typeof alertHistory.$inferSelect[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+
+  try {
+    const conditions = [];
+    
+    if (options?.severity) {
+      conditions.push(eq(alertHistory.severity, options.severity));
+    }
+    if (options?.metricType) {
+      conditions.push(eq(alertHistory.metricType, options.metricType));
+    }
+    if (options?.acknowledgedOnly) {
+      conditions.push(eq(alertHistory.isAcknowledged, true));
+    }
+    if (options?.unacknowledgedOnly) {
+      conditions.push(eq(alertHistory.isAcknowledged, false));
+    }
+    if (options?.startTime) {
+      conditions.push(gte(alertHistory.createdAt, options.startTime));
+    }
+    if (options?.endTime) {
+      conditions.push(lte(alertHistory.createdAt, options.endTime));
+    }
+
+    if (conditions.length > 0) {
+      return await db.select().from(alertHistory)
+        .where(and(...conditions))
+        .orderBy(desc(alertHistory.createdAt))
+        .limit(options?.limit || 100);
+    }
+    
+    return await db.select().from(alertHistory)
+      .orderBy(desc(alertHistory.createdAt))
+      .limit(options?.limit || 100);
+  } catch (error) {
+    console.error("[Database] Failed to get alert history:", error);
+    return [];
+  }
+}
+
+// Acknowledge an alert
+export async function acknowledgeAlert(alertId: number, userId?: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.update(alertHistory)
+      .set({
+        isAcknowledged: true,
+        acknowledgedBy: userId,
+        acknowledgedAt: new Date(),
+      })
+      .where(eq(alertHistory.id, alertId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to acknowledge alert:", error);
+    return false;
+  }
+}
+
+// Get unacknowledged alert count
+export async function getUnacknowledgedAlertCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) {
+    return 0;
+  }
+
+  try {
+    const results = await db.select().from(alertHistory)
+      .where(eq(alertHistory.isAcknowledged, false));
+    return results.length;
+  } catch (error) {
+    console.error("[Database] Failed to get unacknowledged alert count:", error);
+    return 0;
+  }
+}
+
+// Check if threshold is in cooldown
+export async function isThresholdInCooldown(thresholdId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+
+  try {
+    const threshold = await db.select().from(alertThresholds)
+      .where(eq(alertThresholds.id, thresholdId))
+      .limit(1);
+
+    if (threshold.length === 0 || !threshold[0].lastTriggered) {
+      return false;
+    }
+
+    const cooldownMs = (threshold[0].cooldownMinutes || 5) * 60 * 1000;
+    const lastTriggered = new Date(threshold[0].lastTriggered).getTime();
+    
+    return Date.now() - lastTriggered < cooldownMs;
+  } catch (error) {
+    console.error("[Database] Failed to check threshold cooldown:", error);
+    return false;
   }
 }

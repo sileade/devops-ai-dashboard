@@ -2,6 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import * as docker from "../infrastructure/docker";
 import * as kubernetes from "../infrastructure/kubernetes";
+import { saveMetricsSnapshot, getAlertThresholds, recordAlert, isThresholdInCooldown } from "../db";
 
 let io: Server | null = null;
 
@@ -174,18 +175,28 @@ async function collectMetrics() {
 
     metricsHistory.push(metricPoint);
 
-    // Keep only last 24 hours
+    // Keep only last 24 hours in memory
     while (metricsHistory.length > MAX_HISTORY_POINTS) {
       metricsHistory.shift();
     }
+
+    // Save to database for long-term storage
+    await saveMetricsSnapshot({
+      source: "kubernetes",
+      resourceType: "cluster",
+      cpuPercent: Math.round(metricPoint.cpu),
+      memoryPercent: Math.round(metricPoint.memory),
+      networkRxBytes: Math.round(metricPoint.network.rx),
+      networkTxBytes: Math.round(metricPoint.network.tx),
+    });
 
     // Broadcast to all clients
     if (io) {
       io.emit("metrics:update", metricPoint);
     }
 
-    // Check for high resource usage
-    checkResourceAlerts(metricPoint);
+    // Check for high resource usage using configurable thresholds
+    await checkResourceAlertsWithThresholds(metricPoint);
   } catch (error) {
     // Generate mock metrics if real data unavailable
     const metricPoint: MetricPoint = {
@@ -204,9 +215,87 @@ async function collectMetrics() {
       metricsHistory.shift();
     }
 
+    // Save mock metrics to database too
+    await saveMetricsSnapshot({
+      source: "system",
+      resourceType: "cluster",
+      cpuPercent: Math.round(metricPoint.cpu),
+      memoryPercent: Math.round(metricPoint.memory),
+      networkRxBytes: Math.round(metricPoint.network.rx),
+      networkTxBytes: Math.round(metricPoint.network.tx),
+    });
+
     if (io) {
       io.emit("metrics:update", metricPoint);
     }
+
+    // Check thresholds even for mock data
+    await checkResourceAlertsWithThresholds(metricPoint);
+  }
+}
+
+/**
+ * Check resource alerts using configurable thresholds from database
+ */
+async function checkResourceAlertsWithThresholds(metrics: MetricPoint) {
+  try {
+    const thresholds = await getAlertThresholds({ enabledOnly: true });
+    
+    for (const threshold of thresholds) {
+      // Check if threshold is in cooldown
+      const inCooldown = await isThresholdInCooldown(threshold.id);
+      if (inCooldown) continue;
+
+      let currentValue: number | null = null;
+      
+      // Get the relevant metric value
+      switch (threshold.metricType) {
+        case "cpu":
+          currentValue = metrics.cpu;
+          break;
+        case "memory":
+          currentValue = metrics.memory;
+          break;
+        default:
+          continue;
+      }
+
+      if (currentValue === null) continue;
+
+      // Check if alert should be triggered
+      let severity: "warning" | "critical" | null = null;
+      
+      if (currentValue >= threshold.criticalThreshold) {
+        severity = "critical";
+      } else if (currentValue >= threshold.warningThreshold) {
+        severity = "warning";
+      }
+
+      if (!severity) continue;
+
+      // Record alert in database
+      await recordAlert({
+        thresholdId: threshold.id,
+        severity,
+        metricType: threshold.metricType,
+        resourceType: threshold.resourceType,
+        currentValue: Math.round(currentValue),
+        thresholdValue: severity === "critical" ? threshold.criticalThreshold : threshold.warningThreshold,
+        message: `${threshold.name}: ${currentValue.toFixed(1)}% (${severity} threshold: ${severity === "critical" ? threshold.criticalThreshold : threshold.warningThreshold}%)`,
+      });
+
+      // Also create in-memory alert for WebSocket broadcast
+      createAlert({
+        type: severity,
+        category: threshold.metricType === "cpu" ? "high_cpu" : "high_memory",
+        title: severity === "critical" ? `Critical ${threshold.metricType.toUpperCase()} Usage` : `High ${threshold.metricType.toUpperCase()} Usage`,
+        message: `${threshold.name}: ${currentValue.toFixed(1)}%`,
+      });
+    }
+  } catch (error) {
+    console.error("[WebSocket] Error checking thresholds:", error);
+    // Fallback to hardcoded thresholds
+    checkResourceAlerts(metrics);
   }
 }
 

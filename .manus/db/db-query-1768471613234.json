@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO `alert_thresholds` (`name`, `metricType`, `resourceType`, `warningThreshold`, `criticalThreshold`, `isEnabled`, `cooldownMinutes`) VALUES\n('CPU Usage - Cluster', 'cpu', 'cluster', 80, 95, true, 5),\n('Memory Usage - Cluster', 'memory', 'cluster', 80, 95, true, 5),\n('Disk Usage - Cluster', 'disk', 'cluster', 80, 95, true, 15),\n('CPU Usage - Containers', 'cpu', 'container', 80, 95, true, 5),\n('Memory Usage - Containers', 'memory', 'container', 80, 95, true, 5),\n('CPU Usage - Pods', 'cpu', 'pod', 80, 95, true, 5),\n('Memory Usage - Pods', 'memory', 'pod', 80, 95, true, 5);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute INSERT INTO `alert_thresholds` (`name`, `metricType`, `resourceType`, `warningThreshold`, `criticalThreshold`, `isEnabled`, `cooldownMinutes`) VALUES\n('CPU Usage - Cluster', 'cpu', 'cluster', 80, 95, true, 5),\n('Memory Usage - Cluster', 'memory', 'cluster', 80, 95, true, 5),\n('Disk Usage - Cluster', 'disk', 'cluster', 80, 95, true, 15),\n('CPU Usage - Containers', 'cpu', 'container', 80, 95, true, 5),\n('Memory Usage - Containers', 'memory', 'container', 80, 95, true, 5),\n('CPU Usage - Pods', 'cpu', 'pod', 80, 95, true, 5),\n('Memory Usage - Pods', 'memory', 'pod', 80, 95, true, 5);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 66
+}

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `metrics_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `applicationId` int,\n  `source` enum('docker','kubernetes','system') NOT NULL DEFAULT 'system',\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourceId` varchar(255),\n  `cpuPercent` int NOT NULL,\n  `memoryPercent` int NOT NULL,\n  `memoryUsedMb` int,\n  `memoryTotalMb` int,\n  `networkRxBytes` int,\n  `networkTxBytes` int,\n  `diskUsedGb` int,\n  `diskTotalGb` int,\n  `timestamp` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `metrics_history_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3FbHQcBqwdUAeZd.daf6bd01f5d9 --database bVoJhS4CeCN2GuJxoMncsM --execute CREATE TABLE IF NOT EXISTS `metrics_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `applicationId` int,\n  `source` enum('docker','kubernetes','system') NOT NULL DEFAULT 'system',\n  `resourceType` enum('container','pod','node','cluster') NOT NULL DEFAULT 'cluster',\n  `resourceId` varchar(255),\n  `cpuPercent` int NOT NULL,\n  `memoryPercent` int NOT NULL,\n  `memoryUsedMb` int,\n  `memoryTotalMb` int,\n  `networkRxBytes` int,\n  `networkTxBytes` int,\n  `diskUsedGb` int,\n  `diskTotalGb` int,\n  `timestamp` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `metrics_history_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 228
+}

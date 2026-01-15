@@ -83,7 +83,15 @@ const menuItems: MenuItem[] = [
   { icon: ScrollText, label: "Logs", path: "/logs" },
   { icon: Bell, label: "Notifications", path: "/notifications" },
   { icon: GitBranch, label: "Topology", path: "/topology" },
-  { icon: Settings, label: "Settings", path: "/settings" },
+  {
+    icon: Settings,
+    label: "Settings",
+    path: "/settings",
+    children: [
+      { icon: Settings, label: "General", path: "/settings" },
+      { icon: Bell, label: "Alert Thresholds", path: "/settings/alerts" },
+    ],
+  },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

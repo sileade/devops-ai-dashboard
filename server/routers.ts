@@ -10,6 +10,9 @@ import {
   aiRouter,
   connectionsRouter,
   notificationsRouter,
+  metricsRouter,
+  alertThresholdsRouter,
+  alertHistoryRouter,
 } from "./routers/index";
 
 /**
@@ -35,6 +38,9 @@ export const appRouter = router({
   ai: aiRouter,
   connections: connectionsRouter,
   notifications: notificationsRouter,
+  metrics: metricsRouter,
+  alertThresholds: alertThresholdsRouter,
+  alertHistory: alertHistoryRouter,
 });
 
 export type AppRouter = typeof appRouter;
