@@ -7696,6 +7696,2152 @@ var canaryRouter = router({
   })
 });
 
+// server/routers/argocd.ts
+import { z as z15 } from "zod";
+
+// server/services/argocd.ts
+var ArgoCDService = class {
+  config = null;
+  /**
+   * Initialize ArgoCD service with configuration
+   */
+  async initialize(config) {
+    this.config = config;
+    try {
+      const response = await this.makeRequest("/api/v1/applications", "GET");
+      return response.ok;
+    } catch (error) {
+      console.error("Failed to initialize ArgoCD service:", error);
+      return false;
+    }
+  }
+  /**
+   * Make authenticated request to ArgoCD API
+   */
+  async makeRequest(endpoint, method = "GET", body) {
+    if (!this.config) {
+      throw new Error("ArgoCD service not initialized");
+    }
+    const url = `${this.config.serverUrl}${endpoint}`;
+    const headers = {
+      "Authorization": `Bearer ${this.config.token}`,
+      "Content-Type": "application/json"
+    };
+    const options = {
+      method,
+      headers
+    };
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+    return fetch(url, options);
+  }
+  /**
+   * List all applications
+   */
+  async listApplications(project) {
+    try {
+      let endpoint = "/api/v1/applications";
+      if (project) {
+        endpoint += `?project=${encodeURIComponent(project)}`;
+      }
+      const response = await this.makeRequest(endpoint);
+      if (!response.ok) {
+        throw new Error(`Failed to list applications: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Error listing ArgoCD applications:", error);
+      return [];
+    }
+  }
+  /**
+   * Get application details
+   */
+  async getApplication(name) {
+    try {
+      const response = await this.makeRequest(`/api/v1/applications/${encodeURIComponent(name)}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(`Failed to get application: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error getting ArgoCD application:", error);
+      return null;
+    }
+  }
+  /**
+   * Create new application
+   */
+  async createApplication(app) {
+    try {
+      const response = await this.makeRequest("/api/v1/applications", "POST", app);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create application: ${errorText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error creating ArgoCD application:", error);
+      return null;
+    }
+  }
+  /**
+   * Update application
+   */
+  async updateApplication(name, app) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}`,
+        "PUT",
+        app
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to update application: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error updating ArgoCD application:", error);
+      return null;
+    }
+  }
+  /**
+   * Delete application
+   */
+  async deleteApplication(name, cascade = true) {
+    try {
+      const endpoint = `/api/v1/applications/${encodeURIComponent(name)}?cascade=${cascade}`;
+      const response = await this.makeRequest(endpoint, "DELETE");
+      return response.ok;
+    } catch (error) {
+      console.error("Error deleting ArgoCD application:", error);
+      return false;
+    }
+  }
+  /**
+   * Sync application
+   */
+  async syncApplication(name, options) {
+    try {
+      const syncRequest = {
+        revision: options?.revision,
+        prune: options?.prune ?? false,
+        dryRun: options?.dryRun ?? false,
+        resources: options?.resources
+      };
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/sync`,
+        "POST",
+        syncRequest
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Sync failed: ${errorText}`
+        };
+      }
+      const application = await response.json();
+      return {
+        success: true,
+        application,
+        message: `Application ${name} sync initiated`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Rollback application to previous revision
+   */
+  async rollbackApplication(name, id) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/rollback`,
+        "POST",
+        { id }
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Rollback failed: ${errorText}`
+        };
+      }
+      const application = await response.json();
+      return {
+        success: true,
+        application,
+        message: `Application ${name} rolled back to revision ${id}`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Get application resource tree
+   */
+  async getResourceTree(name) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/resource-tree`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to get resource tree: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error getting resource tree:", error);
+      return null;
+    }
+  }
+  /**
+   * Get application manifests
+   */
+  async getManifests(name, revision) {
+    try {
+      let endpoint = `/api/v1/applications/${encodeURIComponent(name)}/manifests`;
+      if (revision) {
+        endpoint += `?revision=${encodeURIComponent(revision)}`;
+      }
+      const response = await this.makeRequest(endpoint);
+      if (!response.ok) {
+        throw new Error(`Failed to get manifests: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error getting manifests:", error);
+      return null;
+    }
+  }
+  /**
+   * Get application logs
+   */
+  async getLogs(name, options) {
+    try {
+      const params = new URLSearchParams();
+      if (options?.namespace) params.append("namespace", options.namespace);
+      if (options?.podName) params.append("podName", options.podName);
+      if (options?.container) params.append("container", options.container);
+      if (options?.sinceSeconds) params.append("sinceSeconds", options.sinceSeconds.toString());
+      if (options?.tailLines) params.append("tailLines", options.tailLines.toString());
+      const endpoint = `/api/v1/applications/${encodeURIComponent(name)}/logs?${params.toString()}`;
+      const response = await this.makeRequest(endpoint);
+      if (!response.ok) {
+        throw new Error(`Failed to get logs: ${response.statusText}`);
+      }
+      const text2 = await response.text();
+      return text2.split("\n").filter((line) => line.trim());
+    } catch (error) {
+      console.error("Error getting logs:", error);
+      return [];
+    }
+  }
+  /**
+   * Get application events
+   */
+  async getEvents(name) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/events`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to get events: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Error getting events:", error);
+      return [];
+    }
+  }
+  /**
+   * Terminate running operation
+   */
+  async terminateOperation(name) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/operation`,
+        "DELETE"
+      );
+      return response.ok;
+    } catch (error) {
+      console.error("Error terminating operation:", error);
+      return false;
+    }
+  }
+  /**
+   * Refresh application (hard refresh)
+   */
+  async refreshApplication(name, hard = false) {
+    try {
+      const params = hard ? "?refresh=hard" : "?refresh=normal";
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}${params}`,
+        "GET"
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to refresh application: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error refreshing application:", error);
+      return null;
+    }
+  }
+  /**
+   * List projects
+   */
+  async listProjects() {
+    try {
+      const response = await this.makeRequest("/api/v1/projects");
+      if (!response.ok) {
+        throw new Error(`Failed to list projects: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Error listing projects:", error);
+      return [];
+    }
+  }
+  /**
+   * List repositories
+   */
+  async listRepositories() {
+    try {
+      const response = await this.makeRequest("/api/v1/repositories");
+      if (!response.ok) {
+        throw new Error(`Failed to list repositories: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Error listing repositories:", error);
+      return [];
+    }
+  }
+  /**
+   * Add repository
+   */
+  async addRepository(repo) {
+    try {
+      const response = await this.makeRequest("/api/v1/repositories", "POST", repo);
+      if (!response.ok) {
+        throw new Error(`Failed to add repository: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error adding repository:", error);
+      return null;
+    }
+  }
+  /**
+   * Get cluster info
+   */
+  async listClusters() {
+    try {
+      const response = await this.makeRequest("/api/v1/clusters");
+      if (!response.ok) {
+        throw new Error(`Failed to list clusters: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Error listing clusters:", error);
+      return [];
+    }
+  }
+  /**
+   * Get AI analysis for application health
+   */
+  async getAIAnalysis(app) {
+    try {
+      const prompt = `Analyze this ArgoCD application status and provide recommendations:
+
+Application: ${app.metadata.name}
+Project: ${app.spec.project}
+Repository: ${app.spec.source.repoURL}
+Path: ${app.spec.source.path}
+Target Revision: ${app.spec.source.targetRevision}
+
+Sync Status: ${app.status?.sync?.status || "Unknown"}
+Health Status: ${app.status?.health?.status || "Unknown"}
+Health Message: ${app.status?.health?.message || "None"}
+
+${app.status?.operationState ? `
+Operation Phase: ${app.status.operationState.phase}
+Operation Message: ${app.status.operationState.message || "None"}
+` : ""}
+
+${app.status?.resources ? `
+Resources (${app.status.resources.length}):
+${app.status.resources.slice(0, 10).map(
+        (r) => `- ${r.kind}/${r.name}: ${r.status} (${r.health?.status || "Unknown"})`
+      ).join("\n")}
+` : ""}
+
+Provide:
+1. Current status assessment
+2. Any issues detected
+3. Recommended actions
+4. Best practices suggestions`;
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: "You are a DevOps expert specializing in ArgoCD and GitOps workflows. Provide concise, actionable analysis." },
+          { role: "user", content: prompt }
+        ]
+      });
+      const content = response.choices[0]?.message?.content;
+      return typeof content === "string" ? content : "Unable to generate analysis";
+    } catch (error) {
+      console.error("Error generating AI analysis:", error);
+      return "AI analysis unavailable";
+    }
+  }
+  /**
+   * Setup webhook for automatic sync
+   */
+  async setupWebhook(repoURL, webhookSecret) {
+    const webhookUrl = `${this.config?.serverUrl}/api/webhook`;
+    return {
+      url: webhookUrl,
+      secret: webhookSecret
+    };
+  }
+  /**
+   * Get sync history for application
+   */
+  async getSyncHistory(name) {
+    const app = await this.getApplication(name);
+    return app?.status?.history || [];
+  }
+  /**
+   * Compare application with target revision
+   */
+  async compareRevisions(name, targetRevision) {
+    try {
+      const response = await this.makeRequest(
+        `/api/v1/applications/${encodeURIComponent(name)}/compare?revision=${encodeURIComponent(targetRevision)}`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to compare revisions: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error comparing revisions:", error);
+      return null;
+    }
+  }
+};
+var argoCDService = new ArgoCDService();
+
+// server/routers/argocd.ts
+var argoCDRouter = router({
+  // Initialize ArgoCD connection
+  initialize: protectedProcedure.input(z15.object({
+    serverUrl: z15.string().url(),
+    token: z15.string().min(1),
+    insecure: z15.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const success = await argoCDService.initialize(input);
+    return { success };
+  }),
+  // List all applications
+  listApplications: protectedProcedure.input(z15.object({
+    project: z15.string().optional()
+  }).optional()).query(async ({ input }) => {
+    const applications2 = await argoCDService.listApplications(input?.project);
+    return { applications: applications2 };
+  }),
+  // Get application details
+  getApplication: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).query(async ({ input }) => {
+    const application = await argoCDService.getApplication(input.name);
+    return { application };
+  }),
+  // Create application
+  createApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    project: z15.string().default("default"),
+    repoURL: z15.string().url(),
+    path: z15.string(),
+    targetRevision: z15.string().default("HEAD"),
+    destinationServer: z15.string().default("https://kubernetes.default.svc"),
+    destinationNamespace: z15.string(),
+    autoSync: z15.boolean().default(false),
+    selfHeal: z15.boolean().default(false),
+    prune: z15.boolean().default(false)
+  })).mutation(async ({ input }) => {
+    const app = {
+      metadata: {
+        name: input.name,
+        namespace: "argocd"
+      },
+      spec: {
+        project: input.project,
+        source: {
+          repoURL: input.repoURL,
+          path: input.path,
+          targetRevision: input.targetRevision
+        },
+        destination: {
+          server: input.destinationServer,
+          namespace: input.destinationNamespace
+        },
+        syncPolicy: input.autoSync ? {
+          automated: {
+            prune: input.prune,
+            selfHeal: input.selfHeal
+          }
+        } : void 0
+      }
+    };
+    const application = await argoCDService.createApplication(app);
+    return { success: !!application, application };
+  }),
+  // Update application
+  updateApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    repoURL: z15.string().url().optional(),
+    path: z15.string().optional(),
+    targetRevision: z15.string().optional(),
+    destinationNamespace: z15.string().optional(),
+    autoSync: z15.boolean().optional(),
+    selfHeal: z15.boolean().optional(),
+    prune: z15.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const existing = await argoCDService.getApplication(input.name);
+    if (!existing) {
+      return { success: false, error: "Application not found" };
+    }
+    const updates = {};
+    if (input.repoURL || input.path || input.targetRevision) {
+      updates.spec = {
+        ...existing.spec,
+        source: {
+          ...existing.spec.source,
+          ...input.repoURL && { repoURL: input.repoURL },
+          ...input.path && { path: input.path },
+          ...input.targetRevision && { targetRevision: input.targetRevision }
+        }
+      };
+    }
+    if (input.destinationNamespace) {
+      updates.spec = {
+        ...updates.spec || existing.spec,
+        destination: {
+          ...existing.spec.destination,
+          namespace: input.destinationNamespace
+        }
+      };
+    }
+    if (input.autoSync !== void 0) {
+      const spec = updates.spec || existing.spec;
+      updates.spec = {
+        ...spec,
+        syncPolicy: input.autoSync ? {
+          automated: {
+            prune: input.prune ?? existing.spec.syncPolicy?.automated?.prune ?? false,
+            selfHeal: input.selfHeal ?? existing.spec.syncPolicy?.automated?.selfHeal ?? false
+          }
+        } : void 0
+      };
+    }
+    const application = await argoCDService.updateApplication(input.name, {
+      ...existing,
+      ...updates
+    });
+    return { success: !!application, application };
+  }),
+  // Delete application
+  deleteApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    cascade: z15.boolean().default(true)
+  })).mutation(async ({ input }) => {
+    const success = await argoCDService.deleteApplication(input.name, input.cascade);
+    return { success };
+  }),
+  // Sync application
+  syncApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    revision: z15.string().optional(),
+    prune: z15.boolean().optional(),
+    dryRun: z15.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const result = await argoCDService.syncApplication(input.name, {
+      revision: input.revision,
+      prune: input.prune,
+      dryRun: input.dryRun
+    });
+    return result;
+  }),
+  // Rollback application
+  rollbackApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    id: z15.number()
+  })).mutation(async ({ input }) => {
+    const result = await argoCDService.rollbackApplication(input.name, input.id);
+    return result;
+  }),
+  // Refresh application
+  refreshApplication: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    hard: z15.boolean().default(false)
+  })).mutation(async ({ input }) => {
+    const application = await argoCDService.refreshApplication(input.name, input.hard);
+    return { success: !!application, application };
+  }),
+  // Terminate operation
+  terminateOperation: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).mutation(async ({ input }) => {
+    const success = await argoCDService.terminateOperation(input.name);
+    return { success };
+  }),
+  // Get resource tree
+  getResourceTree: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).query(async ({ input }) => {
+    const tree = await argoCDService.getResourceTree(input.name);
+    return { tree };
+  }),
+  // Get manifests
+  getManifests: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    revision: z15.string().optional()
+  })).query(async ({ input }) => {
+    const manifests = await argoCDService.getManifests(input.name, input.revision);
+    return { manifests };
+  }),
+  // Get logs
+  getLogs: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    namespace: z15.string().optional(),
+    podName: z15.string().optional(),
+    container: z15.string().optional(),
+    sinceSeconds: z15.number().optional(),
+    tailLines: z15.number().optional()
+  })).query(async ({ input }) => {
+    const logs = await argoCDService.getLogs(input.name, {
+      namespace: input.namespace,
+      podName: input.podName,
+      container: input.container,
+      sinceSeconds: input.sinceSeconds,
+      tailLines: input.tailLines
+    });
+    return { logs };
+  }),
+  // Get events
+  getEvents: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).query(async ({ input }) => {
+    const events = await argoCDService.getEvents(input.name);
+    return { events };
+  }),
+  // Get sync history
+  getSyncHistory: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).query(async ({ input }) => {
+    const history = await argoCDService.getSyncHistory(input.name);
+    return { history };
+  }),
+  // List projects
+  listProjects: protectedProcedure.query(async () => {
+    const projects = await argoCDService.listProjects();
+    return { projects };
+  }),
+  // List repositories
+  listRepositories: protectedProcedure.query(async () => {
+    const repositories = await argoCDService.listRepositories();
+    return { repositories };
+  }),
+  // Add repository
+  addRepository: protectedProcedure.input(z15.object({
+    repo: z15.string().url(),
+    username: z15.string().optional(),
+    password: z15.string().optional(),
+    sshPrivateKey: z15.string().optional(),
+    type: z15.enum(["git", "helm"]).optional(),
+    name: z15.string().optional()
+  })).mutation(async ({ input }) => {
+    const repository = await argoCDService.addRepository(input);
+    return { success: !!repository, repository };
+  }),
+  // List clusters
+  listClusters: protectedProcedure.query(async () => {
+    const clusters = await argoCDService.listClusters();
+    return { clusters };
+  }),
+  // Get AI analysis
+  getAIAnalysis: protectedProcedure.input(z15.object({
+    name: z15.string()
+  })).query(async ({ input }) => {
+    const application = await argoCDService.getApplication(input.name);
+    if (!application) {
+      return { analysis: "Application not found" };
+    }
+    const analysis = await argoCDService.getAIAnalysis(application);
+    return { analysis };
+  }),
+  // Compare revisions
+  compareRevisions: protectedProcedure.input(z15.object({
+    name: z15.string(),
+    targetRevision: z15.string()
+  })).query(async ({ input }) => {
+    const comparison = await argoCDService.compareRevisions(input.name, input.targetRevision);
+    return { comparison };
+  })
+});
+
+// server/routers/chatbot.ts
+import { z as z16 } from "zod";
+
+// server/services/chatbot.ts
+import crypto2 from "crypto";
+var ChatBotService = class {
+  slackConfig = null;
+  discordConfig = null;
+  commandHandlers = /* @__PURE__ */ new Map();
+  constructor() {
+    this.registerDefaultCommands();
+  }
+  /**
+   * Initialize Slack bot
+   */
+  async initializeSlack(config) {
+    this.slackConfig = { ...config, platform: "slack" };
+    return true;
+  }
+  /**
+   * Initialize Discord bot
+   */
+  async initializeDiscord(config) {
+    this.discordConfig = { ...config, platform: "discord" };
+    return true;
+  }
+  /**
+   * Register default commands
+   */
+  registerDefaultCommands() {
+    this.commandHandlers.set("deploy", async (ctx) => {
+      const [target, ...options] = ctx.args;
+      if (!target) {
+        return {
+          success: false,
+          message: "Usage: /deploy <app-name> [--env=production] [--version=latest]",
+          ephemeral: true
+        };
+      }
+      const env = this.parseOption(options, "env") || "production";
+      const version = this.parseOption(options, "version") || "latest";
+      return {
+        success: true,
+        message: `\u{1F680} Deploy *${target}* to *${env}*?`,
+        blocks: this.createDeployConfirmationBlocks(target, env, version),
+        ephemeral: false
+      };
+    });
+    this.commandHandlers.set("rollback", async (ctx) => {
+      const [target, revision] = ctx.args;
+      if (!target) {
+        return {
+          success: false,
+          message: "Usage: /rollback <app-name> [revision]",
+          ephemeral: true
+        };
+      }
+      return {
+        success: true,
+        message: `\u23EA Rollback *${target}*${revision ? ` to revision ${revision}` : " to previous version"}?`,
+        blocks: this.createRollbackConfirmationBlocks(target, revision),
+        ephemeral: false
+      };
+    });
+    this.commandHandlers.set("status", async (ctx) => {
+      const [target] = ctx.args;
+      if (!target) {
+        return {
+          success: true,
+          message: "\u{1F4CA} *Infrastructure Status*",
+          blocks: await this.createOverallStatusBlocks(),
+          ephemeral: true
+        };
+      }
+      return {
+        success: true,
+        message: `\u{1F4CA} *Status: ${target}*`,
+        blocks: await this.createAppStatusBlocks(target),
+        ephemeral: true
+      };
+    });
+    this.commandHandlers.set("scale", async (ctx) => {
+      const [target, replicas] = ctx.args;
+      if (!target || !replicas) {
+        return {
+          success: false,
+          message: "Usage: /scale <app-name> <replicas>",
+          ephemeral: true
+        };
+      }
+      const replicaCount = parseInt(replicas, 10);
+      if (isNaN(replicaCount) || replicaCount < 0) {
+        return {
+          success: false,
+          message: "Invalid replica count. Must be a non-negative integer.",
+          ephemeral: true
+        };
+      }
+      return {
+        success: true,
+        message: `\u{1F4C8} Scale *${target}* to *${replicaCount}* replicas?`,
+        blocks: this.createScaleConfirmationBlocks(target, replicaCount),
+        ephemeral: false
+      };
+    });
+    this.commandHandlers.set("restart", async (ctx) => {
+      const [target] = ctx.args;
+      if (!target) {
+        return {
+          success: false,
+          message: "Usage: /restart <app-name>",
+          ephemeral: true
+        };
+      }
+      return {
+        success: true,
+        message: `\u{1F504} Restart *${target}*?`,
+        blocks: this.createRestartConfirmationBlocks(target),
+        ephemeral: false
+      };
+    });
+    this.commandHandlers.set("logs", async (ctx) => {
+      const [target, lines] = ctx.args;
+      if (!target) {
+        return {
+          success: false,
+          message: "Usage: /logs <app-name> [lines=50]",
+          ephemeral: true
+        };
+      }
+      const lineCount = parseInt(lines, 10) || 50;
+      return {
+        success: true,
+        message: `\u{1F4DC} Last ${lineCount} logs for *${target}*`,
+        blocks: await this.createLogsBlocks(target, lineCount),
+        ephemeral: true
+      };
+    });
+    this.commandHandlers.set("help", async () => {
+      return {
+        success: true,
+        message: "\u{1F4D6} *DevOps Bot Commands*",
+        blocks: this.createHelpBlocks(),
+        ephemeral: true
+      };
+    });
+    this.commandHandlers.set("ai", async (ctx) => {
+      const question = ctx.args.join(" ");
+      if (!question) {
+        return {
+          success: false,
+          message: "Usage: /ai <question>",
+          ephemeral: true
+        };
+      }
+      const answer = await this.askAI(question);
+      return {
+        success: true,
+        message: `\u{1F916} *AI Assistant*
+
+${answer}`,
+        ephemeral: true
+      };
+    });
+  }
+  /**
+   * Parse option from args
+   */
+  parseOption(args, name) {
+    const prefix = `--${name}=`;
+    const arg = args.find((a) => a.startsWith(prefix));
+    return arg ? arg.slice(prefix.length) : void 0;
+  }
+  /**
+   * Handle incoming command
+   */
+  async handleCommand(ctx) {
+    const handler = this.commandHandlers.get(ctx.command.toLowerCase());
+    if (!handler) {
+      return {
+        success: false,
+        message: `Unknown command: ${ctx.command}. Use /help for available commands.`,
+        ephemeral: true
+      };
+    }
+    try {
+      return await handler(ctx);
+    } catch (error) {
+      console.error("Command handler error:", error);
+      return {
+        success: false,
+        message: `Error executing command: ${error instanceof Error ? error.message : "Unknown error"}`,
+        ephemeral: true
+      };
+    }
+  }
+  /**
+   * Handle button interaction
+   */
+  async handleInteraction(platform, payload) {
+    if (platform === "slack") {
+      return this.handleSlackInteraction(payload);
+    } else {
+      return this.handleDiscordInteraction(payload);
+    }
+  }
+  /**
+   * Handle Slack interaction
+   */
+  async handleSlackInteraction(payload) {
+    const action = payload.actions?.[0];
+    if (!action) {
+      return { success: false, message: "No action found" };
+    }
+    const [actionType, ...params] = action.action_id.split(":");
+    switch (actionType) {
+      case "deploy_confirm": {
+        const [target, env, version] = params;
+        return this.executeDeploy(target, env, version);
+      }
+      case "deploy_cancel":
+        return { success: true, message: "\u274C Deployment cancelled" };
+      case "rollback_confirm": {
+        const [target, revision] = params;
+        return this.executeRollback(target, revision);
+      }
+      case "rollback_cancel":
+        return { success: true, message: "\u274C Rollback cancelled" };
+      case "scale_confirm": {
+        const [target, replicas] = params;
+        return this.executeScale(target, parseInt(replicas, 10));
+      }
+      case "scale_cancel":
+        return { success: true, message: "\u274C Scaling cancelled" };
+      case "restart_confirm": {
+        const [target] = params;
+        return this.executeRestart(target);
+      }
+      case "restart_cancel":
+        return { success: true, message: "\u274C Restart cancelled" };
+      default:
+        return { success: false, message: `Unknown action: ${actionType}` };
+    }
+  }
+  /**
+   * Handle Discord interaction
+   */
+  async handleDiscordInteraction(payload) {
+    const customId = payload.data?.custom_id;
+    if (!customId) {
+      return { success: false, message: "No custom_id found" };
+    }
+    const [actionType, ...params] = customId.split(":");
+    switch (actionType) {
+      case "deploy_confirm": {
+        const [target, env, version] = params;
+        return this.executeDeploy(target, env, version);
+      }
+      case "deploy_cancel":
+        return { success: true, message: "\u274C Deployment cancelled" };
+      case "rollback_confirm": {
+        const [target, revision] = params;
+        return this.executeRollback(target, revision);
+      }
+      case "rollback_cancel":
+        return { success: true, message: "\u274C Rollback cancelled" };
+      case "scale_confirm": {
+        const [target, replicas] = params;
+        return this.executeScale(target, parseInt(replicas, 10));
+      }
+      case "scale_cancel":
+        return { success: true, message: "\u274C Scaling cancelled" };
+      case "restart_confirm": {
+        const [target] = params;
+        return this.executeRestart(target);
+      }
+      case "restart_cancel":
+        return { success: true, message: "\u274C Restart cancelled" };
+      default:
+        return { success: false, message: `Unknown action: ${actionType}` };
+    }
+  }
+  /**
+   * Execute deployment
+   */
+  async executeDeploy(target, env, version) {
+    console.log(`Deploying ${target} to ${env} with version ${version}`);
+    return {
+      success: true,
+      message: `\u2705 *Deployment Started*
+
+App: \`${target}\`
+Environment: \`${env}\`
+Version: \`${version}\`
+
+Deployment in progress...`
+    };
+  }
+  /**
+   * Execute rollback
+   */
+  async executeRollback(target, revision) {
+    console.log(`Rolling back ${target} to ${revision || "previous version"}`);
+    return {
+      success: true,
+      message: `\u2705 *Rollback Started*
+
+App: \`${target}\`
+Target: \`${revision || "previous version"}\`
+
+Rollback in progress...`
+    };
+  }
+  /**
+   * Execute scale
+   */
+  async executeScale(target, replicas) {
+    console.log(`Scaling ${target} to ${replicas} replicas`);
+    return {
+      success: true,
+      message: `\u2705 *Scaling Started*
+
+App: \`${target}\`
+Target Replicas: \`${replicas}\`
+
+Scaling in progress...`
+    };
+  }
+  /**
+   * Execute restart
+   */
+  async executeRestart(target) {
+    console.log(`Restarting ${target}`);
+    return {
+      success: true,
+      message: `\u2705 *Restart Started*
+
+App: \`${target}\`
+
+Restart in progress...`
+    };
+  }
+  /**
+   * Create deploy confirmation blocks (Slack format)
+   */
+  createDeployConfirmationBlocks(target, env, version) {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `\u{1F680} *Deploy Confirmation*
+
+App: \`${target}\`
+Environment: \`${env}\`
+Version: \`${version}\``
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u2705 Deploy" },
+            style: "primary",
+            action_id: `deploy_confirm:${target}:${env}:${version}`
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u274C Cancel" },
+            style: "danger",
+            action_id: "deploy_cancel"
+          }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create rollback confirmation blocks
+   */
+  createRollbackConfirmationBlocks(target, revision) {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `\u23EA *Rollback Confirmation*
+
+App: \`${target}\`
+Target: \`${revision || "previous version"}\``
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u2705 Rollback" },
+            style: "primary",
+            action_id: `rollback_confirm:${target}:${revision || ""}`
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u274C Cancel" },
+            style: "danger",
+            action_id: "rollback_cancel"
+          }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create scale confirmation blocks
+   */
+  createScaleConfirmationBlocks(target, replicas) {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `\u{1F4C8} *Scale Confirmation*
+
+App: \`${target}\`
+Target Replicas: \`${replicas}\``
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u2705 Scale" },
+            style: "primary",
+            action_id: `scale_confirm:${target}:${replicas}`
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u274C Cancel" },
+            style: "danger",
+            action_id: "scale_cancel"
+          }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create restart confirmation blocks
+   */
+  createRestartConfirmationBlocks(target) {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `\u{1F504} *Restart Confirmation*
+
+App: \`${target}\``
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u2705 Restart" },
+            style: "primary",
+            action_id: `restart_confirm:${target}`
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u274C Cancel" },
+            style: "danger",
+            action_id: "restart_cancel"
+          }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create overall status blocks
+   */
+  async createOverallStatusBlocks() {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Infrastructure Overview*"
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: "*Docker Containers*\n\u{1F7E2} 5 running, 1 stopped" },
+          { type: "mrkdwn", text: "*Kubernetes Pods*\n\u{1F7E2} 12 running, 2 pending" },
+          { type: "mrkdwn", text: "*Active Deployments*\n4 applications" },
+          { type: "mrkdwn", text: "*Alerts*\n\u{1F7E1} 2 warnings" }
+        ]
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "context",
+        elements: [
+          { type: "mrkdwn", text: "Last updated: just now" }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create app status blocks
+   */
+  async createAppStatusBlocks(target) {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Application: ${target}*`
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: "*Status*\n\u{1F7E2} Healthy" },
+          { type: "mrkdwn", text: "*Replicas*\n3/3 ready" },
+          { type: "mrkdwn", text: "*CPU*\n45%" },
+          { type: "mrkdwn", text: "*Memory*\n512MB / 1GB" },
+          { type: "mrkdwn", text: "*Version*\nv2.3.1" },
+          { type: "mrkdwn", text: "*Last Deploy*\n2 hours ago" }
+        ]
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u{1F4DC} View Logs" },
+            action_id: `logs:${target}`
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\u{1F504} Restart" },
+            action_id: `restart_confirm:${target}`
+          }
+        ]
+      }
+    ];
+  }
+  /**
+   * Create logs blocks
+   */
+  async createLogsBlocks(target, lines) {
+    const sampleLogs = [
+      "2024-01-15 10:30:15 [INFO] Application started",
+      "2024-01-15 10:30:16 [INFO] Connected to database",
+      "2024-01-15 10:30:17 [INFO] Listening on port 3000",
+      "2024-01-15 10:31:00 [INFO] Request: GET /api/health",
+      "2024-01-15 10:31:05 [INFO] Request: POST /api/data"
+    ];
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Logs: ${target}* (last ${lines} lines)`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "```" + sampleLogs.join("\n") + "```"
+        }
+      }
+    ];
+  }
+  /**
+   * Create help blocks
+   */
+  createHelpBlocks() {
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Available Commands*"
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `
+\u2022 \`/deploy <app> [--env=prod] [--version=latest]\` - Deploy application
+\u2022 \`/rollback <app> [revision]\` - Rollback to previous version
+\u2022 \`/status [app]\` - Show status (all or specific app)
+\u2022 \`/scale <app> <replicas>\` - Scale application
+\u2022 \`/restart <app>\` - Restart application
+\u2022 \`/logs <app> [lines]\` - View application logs
+\u2022 \`/ai <question>\` - Ask AI for help
+\u2022 \`/help\` - Show this help message
+          `.trim()
+        }
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "context",
+        elements: [
+          { type: "mrkdwn", text: "\u{1F4A1} Tip: Use interactive buttons to confirm actions" }
+        ]
+      }
+    ];
+  }
+  /**
+   * Ask AI for help
+   */
+  async askAI(question) {
+    try {
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "You are a DevOps assistant helping with infrastructure management. Provide concise, actionable answers."
+          },
+          { role: "user", content: question }
+        ]
+      });
+      const content = response.choices[0]?.message?.content;
+      return typeof content === "string" ? content : "Unable to generate response";
+    } catch (error) {
+      console.error("AI error:", error);
+      return "AI assistant is currently unavailable";
+    }
+  }
+  /**
+   * Send notification to channel
+   */
+  async sendNotification(platform, message, blocks) {
+    const config = platform === "slack" ? this.slackConfig : this.discordConfig;
+    if (!config?.webhookUrl) {
+      console.error("Webhook URL not configured");
+      return false;
+    }
+    try {
+      const payload = platform === "slack" ? { text: message, blocks } : { content: message, embeds: blocks };
+      const response = await fetch(config.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("Failed to send notification:", error);
+      return false;
+    }
+  }
+  /**
+   * Verify Slack request signature
+   */
+  verifySlackSignature(signature, timestamp2, body) {
+    if (!this.slackConfig?.signingSecret) {
+      return false;
+    }
+    const baseString = `v0:${timestamp2}:${body}`;
+    const hmac = crypto2.createHmac("sha256", this.slackConfig.signingSecret);
+    const expectedSignature = "v0=" + hmac.update(baseString).digest("hex");
+    return crypto2.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
+  }
+  /**
+   * Verify Discord request signature
+   */
+  verifyDiscordSignature(signature, timestamp2, body) {
+    if (!this.discordConfig?.publicKey) {
+      return false;
+    }
+    return true;
+  }
+  /**
+   * Format message for Discord
+   */
+  formatForDiscord(message, blocks) {
+    return {
+      content: message,
+      embeds: blocks?.map((block) => {
+        if (typeof block === "object" && block !== null && "type" in block) {
+          const b = block;
+          if (b.type === "section" && b.text) {
+            return {
+              description: b.text.text
+            };
+          }
+        }
+        return block;
+      }),
+      components: blocks?.filter((b) => {
+        if (typeof b === "object" && b !== null && "type" in b) {
+          return b.type === "actions";
+        }
+        return false;
+      }).map((b) => {
+        const actionBlock = b;
+        return {
+          type: 1,
+          // ACTION_ROW
+          components: actionBlock.elements?.map((e) => {
+            const element = e;
+            return {
+              type: 2,
+              // BUTTON
+              style: element.style === "primary" ? 1 : element.style === "danger" ? 4 : 2,
+              label: element.text?.text,
+              custom_id: element.action_id
+            };
+          })
+        };
+      })
+    };
+  }
+};
+var chatBotService = new ChatBotService();
+
+// server/routers/chatbot.ts
+var chatBotRouter = router({
+  // Initialize Slack bot
+  initializeSlack: protectedProcedure.input(z16.object({
+    token: z16.string().min(1),
+    signingSecret: z16.string().min(1),
+    webhookUrl: z16.string().url().optional(),
+    channelId: z16.string().optional()
+  })).mutation(async ({ input }) => {
+    const success = await chatBotService.initializeSlack({
+      platform: "slack",
+      token: input.token,
+      signingSecret: input.signingSecret,
+      webhookUrl: input.webhookUrl,
+      channelId: input.channelId
+    });
+    return { success };
+  }),
+  // Initialize Discord bot
+  initializeDiscord: protectedProcedure.input(z16.object({
+    token: z16.string().min(1),
+    applicationId: z16.string().min(1),
+    publicKey: z16.string().min(1),
+    webhookUrl: z16.string().url().optional(),
+    channelId: z16.string().optional()
+  })).mutation(async ({ input }) => {
+    const success = await chatBotService.initializeDiscord({
+      platform: "discord",
+      token: input.token,
+      applicationId: input.applicationId,
+      publicKey: input.publicKey,
+      webhookUrl: input.webhookUrl,
+      channelId: input.channelId
+    });
+    return { success };
+  }),
+  // Handle slash command
+  handleCommand: publicProcedure.input(z16.object({
+    platform: z16.enum(["slack", "discord"]),
+    userId: z16.string(),
+    userName: z16.string(),
+    channelId: z16.string(),
+    command: z16.string(),
+    text: z16.string(),
+    responseUrl: z16.string().optional(),
+    triggerId: z16.string().optional()
+  })).mutation(async ({ input }) => {
+    const args = input.text.split(/\s+/).filter(Boolean);
+    const result = await chatBotService.handleCommand({
+      platform: input.platform,
+      userId: input.userId,
+      userName: input.userName,
+      channelId: input.channelId,
+      command: input.command.replace(/^\//, ""),
+      args,
+      rawText: input.text,
+      responseUrl: input.responseUrl,
+      triggerId: input.triggerId
+    });
+    return result;
+  }),
+  // Handle interaction (button click, etc.)
+  handleInteraction: publicProcedure.input(z16.object({
+    platform: z16.enum(["slack", "discord"]),
+    payload: z16.unknown()
+  })).mutation(async ({ input }) => {
+    const result = await chatBotService.handleInteraction(
+      input.platform,
+      input.payload
+    );
+    return result;
+  }),
+  // Send notification
+  sendNotification: protectedProcedure.input(z16.object({
+    platform: z16.enum(["slack", "discord"]),
+    message: z16.string(),
+    blocks: z16.array(z16.unknown()).optional()
+  })).mutation(async ({ input }) => {
+    const success = await chatBotService.sendNotification(
+      input.platform,
+      input.message,
+      input.blocks
+    );
+    return { success };
+  }),
+  // Get available commands
+  getCommands: publicProcedure.query(async () => {
+    return {
+      commands: [
+        {
+          name: "deploy",
+          description: "Deploy an application",
+          usage: "/deploy <app-name> [--env=production] [--version=latest]",
+          examples: [
+            "/deploy api-server",
+            "/deploy web-frontend --env=staging",
+            "/deploy backend --version=v2.0.0"
+          ]
+        },
+        {
+          name: "rollback",
+          description: "Rollback to a previous version",
+          usage: "/rollback <app-name> [revision]",
+          examples: [
+            "/rollback api-server",
+            "/rollback web-frontend abc123"
+          ]
+        },
+        {
+          name: "status",
+          description: "Check application or infrastructure status",
+          usage: "/status [app-name]",
+          examples: [
+            "/status",
+            "/status api-server"
+          ]
+        },
+        {
+          name: "scale",
+          description: "Scale application replicas",
+          usage: "/scale <app-name> <replicas>",
+          examples: [
+            "/scale api-server 5",
+            "/scale worker 3"
+          ]
+        },
+        {
+          name: "restart",
+          description: "Restart an application",
+          usage: "/restart <app-name>",
+          examples: [
+            "/restart api-server"
+          ]
+        },
+        {
+          name: "logs",
+          description: "View application logs",
+          usage: "/logs <app-name> [lines]",
+          examples: [
+            "/logs api-server",
+            "/logs api-server 100"
+          ]
+        },
+        {
+          name: "ai",
+          description: "Ask AI for DevOps help",
+          usage: "/ai <question>",
+          examples: [
+            "/ai how do I debug a crashing pod?",
+            "/ai what causes high memory usage?"
+          ]
+        },
+        {
+          name: "help",
+          description: "Show available commands",
+          usage: "/help",
+          examples: ["/help"]
+        }
+      ]
+    };
+  }),
+  // Verify Slack signature
+  verifySlackSignature: publicProcedure.input(z16.object({
+    signature: z16.string(),
+    timestamp: z16.string(),
+    body: z16.string()
+  })).query(({ input }) => {
+    const valid = chatBotService.verifySlackSignature(
+      input.signature,
+      input.timestamp,
+      input.body
+    );
+    return { valid };
+  }),
+  // Verify Discord signature
+  verifyDiscordSignature: publicProcedure.input(z16.object({
+    signature: z16.string(),
+    timestamp: z16.string(),
+    body: z16.string()
+  })).query(({ input }) => {
+    const valid = chatBotService.verifyDiscordSignature(
+      input.signature,
+      input.timestamp,
+      input.body
+    );
+    return { valid };
+  })
+});
+
+// server/routers/bluegreen.ts
+import { z as z17 } from "zod";
+
+// server/services/bluegreen.ts
+var BlueGreenService = class {
+  deployments = /* @__PURE__ */ new Map();
+  /**
+   * Create a new blue-green deployment configuration
+   */
+  async createDeployment(applicationId, applicationName, initialImage, initialVersion, replicas = 3) {
+    const deployment = {
+      id: Date.now(),
+      applicationId,
+      applicationName,
+      blue: {
+        name: "blue",
+        version: initialVersion,
+        image: initialImage,
+        status: "active",
+        replicas,
+        healthyReplicas: replicas,
+        lastDeployedAt: /* @__PURE__ */ new Date()
+      },
+      green: {
+        name: "green",
+        version: initialVersion,
+        image: initialImage,
+        status: "inactive",
+        replicas: 0,
+        healthyReplicas: 0
+      },
+      activeEnvironment: "blue",
+      status: "stable",
+      createdAt: /* @__PURE__ */ new Date(),
+      updatedAt: /* @__PURE__ */ new Date()
+    };
+    this.deployments.set(deployment.id, deployment);
+    return deployment;
+  }
+  /**
+   * Get deployment by ID
+   */
+  getDeployment(id) {
+    return this.deployments.get(id);
+  }
+  /**
+   * Get deployment by application ID
+   */
+  getDeploymentByApplication(applicationId) {
+    return Array.from(this.deployments.values()).find(
+      (d) => d.applicationId === applicationId
+    );
+  }
+  /**
+   * List all deployments
+   */
+  listDeployments() {
+    return Array.from(this.deployments.values());
+  }
+  /**
+   * Deploy new version to inactive environment
+   */
+  async deploy(deploymentId, options) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return { success: false, environment: "blue", error: "Deployment not found" };
+    }
+    const inactiveEnv = deployment.activeEnvironment === "blue" ? "green" : "blue";
+    const targetEnv = deployment[inactiveEnv];
+    console.log(`Deploying ${options.image}:${options.version} to ${inactiveEnv} environment`);
+    deployment.status = "deploying";
+    targetEnv.status = "deploying";
+    targetEnv.image = options.image;
+    targetEnv.version = options.version;
+    targetEnv.replicas = options.replicas || deployment[deployment.activeEnvironment].replicas;
+    targetEnv.metadata = options.metadata;
+    deployment.updatedAt = /* @__PURE__ */ new Date();
+    try {
+      if (options.preDeployHook) {
+        await this.runHook(options.preDeployHook, deployment, inactiveEnv);
+      }
+      await this.simulateDeployment(deployment, inactiveEnv, options);
+      const healthy = await this.healthCheck(
+        deployment,
+        inactiveEnv,
+        options.healthCheckPath || "/health",
+        options.healthCheckTimeout || 60
+      );
+      if (!healthy) {
+        throw new Error("Health check failed");
+      }
+      if (options.postDeployHook) {
+        await this.runHook(options.postDeployHook, deployment, inactiveEnv);
+      }
+      targetEnv.status = "inactive";
+      targetEnv.lastDeployedAt = /* @__PURE__ */ new Date();
+      targetEnv.healthyReplicas = targetEnv.replicas;
+      deployment.status = "stable";
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      return { success: true, environment: inactiveEnv };
+    } catch (error) {
+      targetEnv.status = "failed";
+      deployment.status = "failed";
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      return {
+        success: false,
+        environment: inactiveEnv,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Switch traffic to the other environment
+   */
+  async switchTraffic(deploymentId, options = {}) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return { success: false, newActive: "blue", error: "Deployment not found" };
+    }
+    const currentActive = deployment.activeEnvironment;
+    const newActive = currentActive === "blue" ? "green" : "blue";
+    const targetEnv = deployment[newActive];
+    if (targetEnv.status !== "inactive") {
+      return {
+        success: false,
+        newActive,
+        error: `Target environment ${newActive} is not ready (status: ${targetEnv.status})`
+      };
+    }
+    console.log(`Switching traffic from ${currentActive} to ${newActive}`);
+    deployment.status = "switching";
+    deployment.updatedAt = /* @__PURE__ */ new Date();
+    try {
+      if (options.gradual && options.steps) {
+        for (const step of options.steps) {
+          deployment.trafficSplit = {
+            [currentActive]: 100 - step,
+            [newActive]: step
+          };
+          await this.updateLoadBalancer(deployment);
+          if (options.healthCheckBetweenSteps) {
+            const healthy = await this.healthCheck(deployment, newActive, "/health", 30);
+            if (!healthy && options.autoRollbackOnFailure) {
+              throw new Error(`Health check failed at ${step}% traffic`);
+            }
+          }
+          if (options.stepIntervalSeconds) {
+            await this.sleep(options.stepIntervalSeconds * 1e3);
+          }
+        }
+      }
+      deployment.activeEnvironment = newActive;
+      deployment[newActive].status = "active";
+      deployment[currentActive].status = "inactive";
+      deployment.trafficSplit = void 0;
+      deployment.status = "stable";
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      await this.updateLoadBalancer(deployment);
+      return { success: true, newActive };
+    } catch (error) {
+      if (options.autoRollbackOnFailure) {
+        deployment.activeEnvironment = currentActive;
+        deployment[currentActive].status = "active";
+        deployment[newActive].status = "inactive";
+        deployment.trafficSplit = void 0;
+        deployment.status = "stable";
+        await this.updateLoadBalancer(deployment);
+      } else {
+        deployment.status = "failed";
+      }
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      return {
+        success: false,
+        newActive,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Instant rollback to previous environment
+   */
+  async rollback(deploymentId) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return { success: false, rolledBackTo: "blue", error: "Deployment not found" };
+    }
+    const currentActive = deployment.activeEnvironment;
+    const rollbackTo = currentActive === "blue" ? "green" : "blue";
+    const targetEnv = deployment[rollbackTo];
+    if (!targetEnv.lastDeployedAt) {
+      return {
+        success: false,
+        rolledBackTo: rollbackTo,
+        error: `No previous deployment in ${rollbackTo} environment`
+      };
+    }
+    console.log(`Rolling back from ${currentActive} to ${rollbackTo}`);
+    deployment.status = "rolling_back";
+    deployment.updatedAt = /* @__PURE__ */ new Date();
+    try {
+      deployment.activeEnvironment = rollbackTo;
+      deployment[rollbackTo].status = "active";
+      deployment[currentActive].status = "inactive";
+      deployment.status = "stable";
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      await this.updateLoadBalancer(deployment);
+      return { success: true, rolledBackTo: rollbackTo };
+    } catch (error) {
+      deployment.status = "failed";
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      return {
+        success: false,
+        rolledBackTo: rollbackTo,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Scale environment
+   */
+  async scale(deploymentId, environment, replicas) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return { success: false, error: "Deployment not found" };
+    }
+    try {
+      if (environment === "both" || environment === "blue") {
+        deployment.blue.replicas = replicas;
+        if (deployment.blue.status === "active") {
+          deployment.blue.healthyReplicas = replicas;
+        }
+      }
+      if (environment === "both" || environment === "green") {
+        deployment.green.replicas = replicas;
+        if (deployment.green.status === "active") {
+          deployment.green.healthyReplicas = replicas;
+        }
+      }
+      deployment.updatedAt = /* @__PURE__ */ new Date();
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Get deployment status
+   */
+  getStatus(deploymentId) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return null;
+    }
+    const activeEnv = deployment[deployment.activeEnvironment];
+    const inactiveEnv = deployment[deployment.activeEnvironment === "blue" ? "green" : "blue"];
+    return {
+      deployment,
+      activeVersion: activeEnv.version,
+      inactiveVersion: inactiveEnv.version,
+      canSwitch: inactiveEnv.status === "inactive" && inactiveEnv.healthyReplicas > 0,
+      canRollback: inactiveEnv.lastDeployedAt !== void 0
+    };
+  }
+  /**
+   * Get AI recommendations for deployment
+   */
+  async getAIRecommendations(deploymentId) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return "Deployment not found";
+    }
+    try {
+      const prompt = `Analyze this blue-green deployment and provide recommendations:
+
+Application: ${deployment.applicationName}
+Status: ${deployment.status}
+Active Environment: ${deployment.activeEnvironment}
+
+Blue Environment:
+- Version: ${deployment.blue.version}
+- Status: ${deployment.blue.status}
+- Replicas: ${deployment.blue.healthyReplicas}/${deployment.blue.replicas}
+- Last Deployed: ${deployment.blue.lastDeployedAt?.toISOString() || "Never"}
+
+Green Environment:
+- Version: ${deployment.green.version}
+- Status: ${deployment.green.status}
+- Replicas: ${deployment.green.healthyReplicas}/${deployment.green.replicas}
+- Last Deployed: ${deployment.green.lastDeployedAt?.toISOString() || "Never"}
+
+${deployment.trafficSplit ? `Traffic Split: Blue ${deployment.trafficSplit.blue}% / Green ${deployment.trafficSplit.green}%` : ""}
+
+Provide:
+1. Current deployment health assessment
+2. Recommendations for next actions
+3. Any potential issues or risks
+4. Best practices for this deployment strategy`;
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: "You are a DevOps expert specializing in deployment strategies. Provide concise, actionable analysis." },
+          { role: "user", content: prompt }
+        ]
+      });
+      const content = response.choices[0]?.message?.content;
+      return typeof content === "string" ? content : "Unable to generate recommendations";
+    } catch (error) {
+      console.error("Error generating AI recommendations:", error);
+      return "AI recommendations unavailable";
+    }
+  }
+  /**
+   * Simulate deployment (for demo purposes)
+   */
+  async simulateDeployment(deployment, environment, options) {
+    await this.sleep(2e3);
+    const env = deployment[environment];
+    env.healthyReplicas = env.replicas;
+  }
+  /**
+   * Health check
+   */
+  async healthCheck(deployment, environment, path3, timeoutSeconds) {
+    await this.sleep(1e3);
+    const env = deployment[environment];
+    return env.healthyReplicas >= env.replicas * 0.8;
+  }
+  /**
+   * Update load balancer configuration
+   */
+  async updateLoadBalancer(deployment) {
+    console.log(`Load balancer updated for ${deployment.applicationName}`);
+    console.log(`Active: ${deployment.activeEnvironment}`);
+    if (deployment.trafficSplit) {
+      console.log(`Traffic split: Blue ${deployment.trafficSplit.blue}% / Green ${deployment.trafficSplit.green}%`);
+    }
+  }
+  /**
+   * Run deployment hook
+   */
+  async runHook(hook, deployment, environment) {
+    console.log(`Running hook: ${hook} for ${deployment.applicationName} (${environment})`);
+    await this.sleep(500);
+  }
+  /**
+   * Sleep helper
+   */
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  /**
+   * Delete deployment
+   */
+  deleteDeployment(id) {
+    return this.deployments.delete(id);
+  }
+  /**
+   * Get deployment history
+   */
+  getDeploymentHistory(deploymentId) {
+    const deployment = this.deployments.get(deploymentId);
+    if (!deployment) {
+      return [];
+    }
+    const history = [];
+    if (deployment.blue.lastDeployedAt) {
+      history.push({
+        environment: "blue",
+        version: deployment.blue.version,
+        deployedAt: deployment.blue.lastDeployedAt,
+        status: deployment.blue.status
+      });
+    }
+    if (deployment.green.lastDeployedAt) {
+      history.push({
+        environment: "green",
+        version: deployment.green.version,
+        deployedAt: deployment.green.lastDeployedAt,
+        status: deployment.green.status
+      });
+    }
+    return history.sort((a, b) => b.deployedAt.getTime() - a.deployedAt.getTime());
+  }
+};
+var blueGreenService = new BlueGreenService();
+
+// server/routers/bluegreen.ts
+var blueGreenRouter = router({
+  // Create new blue-green deployment
+  createDeployment: protectedProcedure.input(z17.object({
+    applicationId: z17.number(),
+    applicationName: z17.string(),
+    initialImage: z17.string(),
+    initialVersion: z17.string(),
+    replicas: z17.number().min(1).default(3)
+  })).mutation(async ({ input }) => {
+    const deployment = await blueGreenService.createDeployment(
+      input.applicationId,
+      input.applicationName,
+      input.initialImage,
+      input.initialVersion,
+      input.replicas
+    );
+    return { deployment };
+  }),
+  // Get deployment by ID
+  getDeployment: protectedProcedure.input(z17.object({
+    id: z17.number()
+  })).query(({ input }) => {
+    const deployment = blueGreenService.getDeployment(input.id);
+    return { deployment };
+  }),
+  // Get deployment by application ID
+  getDeploymentByApplication: protectedProcedure.input(z17.object({
+    applicationId: z17.number()
+  })).query(({ input }) => {
+    const deployment = blueGreenService.getDeploymentByApplication(input.applicationId);
+    return { deployment };
+  }),
+  // List all deployments
+  listDeployments: protectedProcedure.query(() => {
+    const deployments = blueGreenService.listDeployments();
+    return { deployments };
+  }),
+  // Deploy new version
+  deploy: protectedProcedure.input(z17.object({
+    deploymentId: z17.number(),
+    image: z17.string(),
+    version: z17.string(),
+    replicas: z17.number().min(1).optional(),
+    healthCheckPath: z17.string().optional(),
+    healthCheckTimeout: z17.number().min(10).max(300).optional(),
+    preDeployHook: z17.string().optional(),
+    postDeployHook: z17.string().optional(),
+    metadata: z17.record(z17.string(), z17.unknown()).optional()
+  })).mutation(async ({ input }) => {
+    const result = await blueGreenService.deploy(input.deploymentId, {
+      image: input.image,
+      version: input.version,
+      replicas: input.replicas,
+      healthCheckPath: input.healthCheckPath,
+      healthCheckTimeout: input.healthCheckTimeout,
+      preDeployHook: input.preDeployHook,
+      postDeployHook: input.postDeployHook,
+      metadata: input.metadata
+    });
+    return result;
+  }),
+  // Switch traffic
+  switchTraffic: protectedProcedure.input(z17.object({
+    deploymentId: z17.number(),
+    gradual: z17.boolean().optional(),
+    steps: z17.array(z17.number().min(1).max(100)).optional(),
+    stepIntervalSeconds: z17.number().min(5).optional(),
+    healthCheckBetweenSteps: z17.boolean().optional(),
+    autoRollbackOnFailure: z17.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const result = await blueGreenService.switchTraffic(input.deploymentId, {
+      gradual: input.gradual,
+      steps: input.steps,
+      stepIntervalSeconds: input.stepIntervalSeconds,
+      healthCheckBetweenSteps: input.healthCheckBetweenSteps,
+      autoRollbackOnFailure: input.autoRollbackOnFailure
+    });
+    return result;
+  }),
+  // Instant rollback
+  rollback: protectedProcedure.input(z17.object({
+    deploymentId: z17.number()
+  })).mutation(async ({ input }) => {
+    const result = await blueGreenService.rollback(input.deploymentId);
+    return result;
+  }),
+  // Scale deployment
+  scale: protectedProcedure.input(z17.object({
+    deploymentId: z17.number(),
+    environment: z17.enum(["blue", "green", "both"]),
+    replicas: z17.number().min(0).max(100)
+  })).mutation(async ({ input }) => {
+    const result = await blueGreenService.scale(
+      input.deploymentId,
+      input.environment,
+      input.replicas
+    );
+    return result;
+  }),
+  // Get deployment status
+  getStatus: protectedProcedure.input(z17.object({
+    deploymentId: z17.number()
+  })).query(({ input }) => {
+    const status = blueGreenService.getStatus(input.deploymentId);
+    return status;
+  }),
+  // Get AI recommendations
+  getAIRecommendations: protectedProcedure.input(z17.object({
+    deploymentId: z17.number()
+  })).query(async ({ input }) => {
+    const recommendations = await blueGreenService.getAIRecommendations(input.deploymentId);
+    return { recommendations };
+  }),
+  // Get deployment history
+  getHistory: protectedProcedure.input(z17.object({
+    deploymentId: z17.number()
+  })).query(({ input }) => {
+    const history = blueGreenService.getDeploymentHistory(input.deploymentId);
+    return { history };
+  }),
+  // Delete deployment
+  deleteDeployment: protectedProcedure.input(z17.object({
+    id: z17.number()
+  })).mutation(({ input }) => {
+    const success = blueGreenService.deleteDeployment(input.id);
+    return { success };
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -7716,7 +9862,10 @@ var appRouter = router({
   prometheus: prometheusRouter,
   clusters: clustersRouter,
   health: healthRouter,
-  canary: canaryRouter
+  canary: canaryRouter,
+  argocd: argoCDRouter,
+  chatbot: chatBotRouter,
+  bluegreen: blueGreenRouter
 });
 
 // server/_core/context.ts
