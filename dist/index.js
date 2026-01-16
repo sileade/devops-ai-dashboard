@@ -484,6 +484,186 @@ var clusterComparisons = mysqlTable("cluster_comparisons", {
   // comparison results
   createdAt: timestamp("createdAt").defaultNow().notNull()
 });
+var canaryDeployments = mysqlTable("canary_deployments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  applicationId: int("applicationId"),
+  clusterId: int("clusterId"),
+  // Deployment identification
+  name: varchar("name", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }).default("default"),
+  targetDeployment: varchar("targetDeployment", { length: 255 }).notNull(),
+  // Version info
+  stableVersion: varchar("stableVersion", { length: 100 }),
+  canaryVersion: varchar("canaryVersion", { length: 100 }),
+  stableImage: varchar("stableImage", { length: 500 }),
+  canaryImage: varchar("canaryImage", { length: 500 }),
+  // Traffic configuration
+  trafficSplitType: mysqlEnum("trafficSplitType", ["percentage", "header", "cookie"]).default("percentage").notNull(),
+  initialCanaryPercent: int("initialCanaryPercent").default(10).notNull(),
+  currentCanaryPercent: int("currentCanaryPercent").default(0).notNull(),
+  targetCanaryPercent: int("targetCanaryPercent").default(100).notNull(),
+  incrementPercent: int("incrementPercent").default(10).notNull(),
+  // How much to increase per step
+  incrementIntervalMinutes: int("incrementIntervalMinutes").default(5).notNull(),
+  // Health thresholds for auto-rollback
+  errorRateThreshold: int("errorRateThreshold").default(5).notNull(),
+  // Percentage
+  latencyThresholdMs: int("latencyThresholdMs").default(1e3).notNull(),
+  successRateThreshold: int("successRateThreshold").default(95).notNull(),
+  // Percentage
+  minHealthyPods: int("minHealthyPods").default(1).notNull(),
+  // Rollback configuration
+  autoRollbackEnabled: boolean("autoRollbackEnabled").default(true).notNull(),
+  rollbackOnErrorRate: boolean("rollbackOnErrorRate").default(true).notNull(),
+  rollbackOnLatency: boolean("rollbackOnLatency").default(true).notNull(),
+  rollbackOnPodFailure: boolean("rollbackOnPodFailure").default(true).notNull(),
+  maxRollbackAttempts: int("maxRollbackAttempts").default(3).notNull(),
+  // Analysis configuration
+  analysisIntervalSeconds: int("analysisIntervalSeconds").default(30).notNull(),
+  minAnalysisDuration: int("minAnalysisDuration").default(60).notNull(),
+  // Minimum seconds before promotion
+  requireManualApproval: boolean("requireManualApproval").default(false).notNull(),
+  // Status
+  status: mysqlEnum("status", [
+    "pending",
+    "initializing",
+    "progressing",
+    "paused",
+    "promoting",
+    "promoted",
+    "rolling_back",
+    "rolled_back",
+    "failed",
+    "cancelled"
+  ]).default("pending").notNull(),
+  statusMessage: text("statusMessage"),
+  // Timing
+  startedAt: timestamp("startedAt"),
+  lastProgressAt: timestamp("lastProgressAt"),
+  completedAt: timestamp("completedAt"),
+  // Metadata
+  createdBy: varchar("createdBy", { length: 255 }),
+  gitCommit: varchar("gitCommit", { length: 100 }),
+  gitBranch: varchar("gitBranch", { length: 255 }),
+  pullRequestUrl: varchar("pullRequestUrl", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var canaryDeploymentSteps = mysqlTable("canary_deployment_steps", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  stepNumber: int("stepNumber").notNull(),
+  targetPercent: int("targetPercent").notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "skipped"]).default("pending").notNull(),
+  // Metrics at this step
+  requestCount: int("requestCount").default(0),
+  errorCount: int("errorCount").default(0),
+  avgLatencyMs: int("avgLatencyMs"),
+  p99LatencyMs: int("p99LatencyMs"),
+  successRate: int("successRate"),
+  // Percentage * 100 for precision
+  // Health status
+  healthyPods: int("healthyPods"),
+  totalPods: int("totalPods"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var canaryMetrics = mysqlTable("canary_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  stepId: int("stepId"),
+  // Traffic metrics
+  canaryPercent: int("canaryPercent").notNull(),
+  canaryRequests: int("canaryRequests").default(0),
+  stableRequests: int("stableRequests").default(0),
+  // Error metrics
+  canaryErrors: int("canaryErrors").default(0),
+  stableErrors: int("stableErrors").default(0),
+  canaryErrorRate: int("canaryErrorRate"),
+  // Percentage * 100
+  stableErrorRate: int("stableErrorRate"),
+  // Latency metrics (milliseconds)
+  canaryAvgLatency: int("canaryAvgLatency"),
+  stableAvgLatency: int("stableAvgLatency"),
+  canaryP50Latency: int("canaryP50Latency"),
+  stableP50Latency: int("stableP50Latency"),
+  canaryP95Latency: int("canaryP95Latency"),
+  stableP95Latency: int("stableP95Latency"),
+  canaryP99Latency: int("canaryP99Latency"),
+  stableP99Latency: int("stableP99Latency"),
+  // Pod health
+  canaryHealthyPods: int("canaryHealthyPods"),
+  canaryTotalPods: int("canaryTotalPods"),
+  stableHealthyPods: int("stableHealthyPods"),
+  stableTotalPods: int("stableTotalPods"),
+  // Resource usage
+  canaryCpuPercent: int("canaryCpuPercent"),
+  stableCpuPercent: int("stableCpuPercent"),
+  canaryMemoryPercent: int("canaryMemoryPercent"),
+  stableMemoryPercent: int("stableMemoryPercent"),
+  // Analysis result
+  analysisResult: mysqlEnum("analysisResult", ["healthy", "degraded", "unhealthy", "inconclusive"]).default("inconclusive"),
+  analysisNotes: text("analysisNotes"),
+  timestamp: timestamp("timestamp").defaultNow().notNull()
+});
+var canaryRollbackHistory = mysqlTable("canary_rollback_history", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  // Rollback trigger
+  trigger: mysqlEnum("trigger", [
+    "auto_error_rate",
+    "auto_latency",
+    "auto_pod_failure",
+    "auto_health_check",
+    "manual",
+    "timeout",
+    "cancelled"
+  ]).notNull(),
+  triggerValue: varchar("triggerValue", { length: 255 }),
+  // The value that triggered rollback
+  thresholdValue: varchar("thresholdValue", { length: 255 }),
+  // The threshold that was exceeded
+  // State at rollback
+  canaryPercentAtRollback: int("canaryPercentAtRollback").notNull(),
+  stepAtRollback: int("stepAtRollback"),
+  // Rollback execution
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "failed"]).default("pending").notNull(),
+  rollbackToVersion: varchar("rollbackToVersion", { length: 100 }),
+  rollbackToImage: varchar("rollbackToImage", { length: 500 }),
+  // Timing
+  initiatedAt: timestamp("initiatedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  // Details
+  initiatedBy: varchar("initiatedBy", { length: 255 }),
+  // "system" or user ID
+  reason: text("reason"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var canaryTemplates = mysqlTable("canary_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Default configuration
+  trafficSplitType: mysqlEnum("trafficSplitType", ["percentage", "header", "cookie"]).default("percentage").notNull(),
+  initialCanaryPercent: int("initialCanaryPercent").default(10).notNull(),
+  incrementPercent: int("incrementPercent").default(10).notNull(),
+  incrementIntervalMinutes: int("incrementIntervalMinutes").default(5).notNull(),
+  // Default thresholds
+  errorRateThreshold: int("errorRateThreshold").default(5).notNull(),
+  latencyThresholdMs: int("latencyThresholdMs").default(1e3).notNull(),
+  successRateThreshold: int("successRateThreshold").default(95).notNull(),
+  // Default rollback settings
+  autoRollbackEnabled: boolean("autoRollbackEnabled").default(true).notNull(),
+  requireManualApproval: boolean("requireManualApproval").default(false).notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
 
 // server/_core/env.ts
 var ENV = {
@@ -6949,6 +7129,573 @@ var healthRouter = router({
   })
 });
 
+// server/routers/canary.ts
+import { z as z14 } from "zod";
+
+// server/services/canary.ts
+import { eq as eq5, desc as desc5, and as and2 } from "drizzle-orm";
+async function createCanaryDeployment(userId, config) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const deploymentData = {
+    userId,
+    applicationId: config.applicationId,
+    clusterId: config.clusterId,
+    name: config.name,
+    namespace: config.namespace || "default",
+    targetDeployment: config.targetDeployment,
+    stableVersion: config.stableVersion,
+    canaryVersion: config.canaryVersion,
+    stableImage: config.stableImage,
+    canaryImage: config.canaryImage,
+    trafficSplitType: config.trafficSplitType || "percentage",
+    initialCanaryPercent: config.initialCanaryPercent || 10,
+    currentCanaryPercent: 0,
+    targetCanaryPercent: config.targetCanaryPercent || 100,
+    incrementPercent: config.incrementPercent || 10,
+    incrementIntervalMinutes: config.incrementIntervalMinutes || 5,
+    errorRateThreshold: config.errorRateThreshold || 5,
+    latencyThresholdMs: config.latencyThresholdMs || 1e3,
+    successRateThreshold: config.successRateThreshold || 95,
+    minHealthyPods: config.minHealthyPods || 1,
+    autoRollbackEnabled: config.autoRollbackEnabled ?? true,
+    rollbackOnErrorRate: config.rollbackOnErrorRate ?? true,
+    rollbackOnLatency: config.rollbackOnLatency ?? true,
+    rollbackOnPodFailure: config.rollbackOnPodFailure ?? true,
+    requireManualApproval: config.requireManualApproval ?? false,
+    status: "pending",
+    createdBy: String(userId),
+    gitCommit: config.gitCommit,
+    gitBranch: config.gitBranch,
+    pullRequestUrl: config.pullRequestUrl
+  };
+  const [result] = await db.insert(canaryDeployments).values(deploymentData);
+  const deploymentId = result.insertId;
+  const steps = generateDeploymentSteps(
+    deploymentId,
+    config.initialCanaryPercent || 10,
+    config.targetCanaryPercent || 100,
+    config.incrementPercent || 10
+  );
+  if (steps.length > 0) {
+    await db.insert(canaryDeploymentSteps).values(steps);
+  }
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, deploymentId));
+  return deployment;
+}
+function generateDeploymentSteps(deploymentId, initialPercent, targetPercent, incrementPercent) {
+  const steps = [];
+  let currentPercent = initialPercent;
+  let stepNumber = 1;
+  while (currentPercent <= targetPercent) {
+    steps.push({
+      deploymentId,
+      stepNumber,
+      targetPercent: currentPercent,
+      status: "pending"
+    });
+    if (currentPercent === targetPercent) break;
+    currentPercent = Math.min(currentPercent + incrementPercent, targetPercent);
+    stepNumber++;
+  }
+  return steps;
+}
+async function getCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment || null;
+}
+async function listCanaryDeployments(userId, status, limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  let query = db.select().from(canaryDeployments);
+  const conditions = [];
+  if (userId) conditions.push(eq5(canaryDeployments.userId, userId));
+  if (status) conditions.push(eq5(canaryDeployments.status, status));
+  if (conditions.length > 0) {
+    query = query.where(and2(...conditions));
+  }
+  return query.orderBy(desc5(canaryDeployments.createdAt)).limit(limit);
+}
+async function getDeploymentSteps(deploymentId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(canaryDeploymentSteps).where(eq5(canaryDeploymentSteps.deploymentId, deploymentId)).orderBy(canaryDeploymentSteps.stepNumber);
+}
+async function startCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(canaryDeployments).set({
+    status: "initializing",
+    startedAt: /* @__PURE__ */ new Date()
+  }).where(eq5(canaryDeployments.id, id));
+  const steps = await getDeploymentSteps(id);
+  if (steps.length > 0) {
+    await db.update(canaryDeploymentSteps).set({
+      status: "running",
+      startedAt: /* @__PURE__ */ new Date()
+    }).where(eq5(canaryDeploymentSteps.id, steps[0].id));
+  }
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment;
+}
+async function progressCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const deployment = await getCanaryDeployment(id);
+  if (!deployment) {
+    throw new Error("Deployment not found");
+  }
+  const analysis = await analyzeCanaryHealth(id);
+  await recordCanaryMetrics(id, analysis);
+  if (analysis.shouldRollback) {
+    await initiateRollback(id, analysis.reasons[0] || "Health check failed", "auto_health_check");
+    const [updated2] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+    return { deployment: updated2, analysis };
+  }
+  if (analysis.shouldPromote) {
+    const steps = await getDeploymentSteps(id);
+    const currentStep = steps.find((s) => s.status === "running");
+    if (currentStep) {
+      await db.update(canaryDeploymentSteps).set({
+        status: "completed",
+        completedAt: /* @__PURE__ */ new Date()
+      }).where(eq5(canaryDeploymentSteps.id, currentStep.id));
+      const nextStep = steps.find((s) => s.stepNumber === currentStep.stepNumber + 1);
+      if (nextStep) {
+        await db.update(canaryDeploymentSteps).set({
+          status: "running",
+          startedAt: /* @__PURE__ */ new Date()
+        }).where(eq5(canaryDeploymentSteps.id, nextStep.id));
+        await db.update(canaryDeployments).set({
+          status: "progressing",
+          currentCanaryPercent: nextStep.targetPercent,
+          lastProgressAt: /* @__PURE__ */ new Date()
+        }).where(eq5(canaryDeployments.id, id));
+      } else {
+        await promoteCanaryToStable(id);
+      }
+    }
+  }
+  const [updated] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return { deployment: updated, analysis };
+}
+async function promoteCanaryToStable(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(canaryDeployments).set({
+    status: "promoted",
+    currentCanaryPercent: 100,
+    completedAt: /* @__PURE__ */ new Date(),
+    statusMessage: "Canary successfully promoted to stable"
+  }).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment;
+}
+async function pauseCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(canaryDeployments).set({
+    status: "paused",
+    statusMessage: "Deployment paused by user"
+  }).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment;
+}
+async function resumeCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(canaryDeployments).set({
+    status: "progressing",
+    statusMessage: "Deployment resumed"
+  }).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment;
+}
+async function cancelCanaryDeployment(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(canaryDeployments).set({
+    status: "cancelled",
+    completedAt: /* @__PURE__ */ new Date(),
+    statusMessage: "Deployment cancelled by user"
+  }).where(eq5(canaryDeployments.id, id));
+  await db.update(canaryDeploymentSteps).set({ status: "skipped" }).where(
+    and2(
+      eq5(canaryDeploymentSteps.deploymentId, id),
+      eq5(canaryDeploymentSteps.status, "pending")
+    )
+  );
+  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  return deployment;
+}
+async function initiateRollback(deploymentId, reason, trigger, initiatedBy) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const deployment = await getCanaryDeployment(deploymentId);
+  if (!deployment) {
+    throw new Error("Deployment not found");
+  }
+  const steps = await getDeploymentSteps(deploymentId);
+  const currentStep = steps.find((s) => s.status === "running");
+  const rollbackData = {
+    deploymentId,
+    trigger,
+    canaryPercentAtRollback: deployment.currentCanaryPercent,
+    stepAtRollback: currentStep?.stepNumber,
+    status: "in_progress",
+    rollbackToVersion: deployment.stableVersion,
+    rollbackToImage: deployment.stableImage,
+    initiatedBy: initiatedBy || "system",
+    reason
+  };
+  const [result] = await db.insert(canaryRollbackHistory).values(rollbackData);
+  await db.update(canaryDeployments).set({
+    status: "rolling_back",
+    statusMessage: `Rolling back: ${reason}`
+  }).where(eq5(canaryDeployments.id, deploymentId));
+  if (currentStep) {
+    await db.update(canaryDeploymentSteps).set({ status: "failed" }).where(eq5(canaryDeploymentSteps.id, currentStep.id));
+  }
+  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, result.insertId));
+  return rollback;
+}
+async function completeRollback(rollbackId, success, errorMessage) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, rollbackId));
+  if (!rollback) {
+    throw new Error("Rollback record not found");
+  }
+  await db.update(canaryRollbackHistory).set({
+    status: success ? "completed" : "failed",
+    completedAt: /* @__PURE__ */ new Date(),
+    errorMessage
+  }).where(eq5(canaryRollbackHistory.id, rollbackId));
+  await db.update(canaryDeployments).set({
+    status: success ? "rolled_back" : "failed",
+    currentCanaryPercent: 0,
+    completedAt: /* @__PURE__ */ new Date(),
+    statusMessage: success ? "Successfully rolled back to stable version" : `Rollback failed: ${errorMessage}`
+  }).where(eq5(canaryDeployments.id, rollback.deploymentId));
+  const [updated] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, rollbackId));
+  return updated;
+}
+async function getRollbackHistory(deploymentId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.deploymentId, deploymentId)).orderBy(desc5(canaryRollbackHistory.createdAt));
+}
+async function recordCanaryMetrics(deploymentId, analysis, stepId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const deployment = await getCanaryDeployment(deploymentId);
+  if (!deployment) {
+    throw new Error("Deployment not found");
+  }
+  const metricData = {
+    deploymentId,
+    stepId,
+    canaryPercent: deployment.currentCanaryPercent,
+    canaryRequests: Math.floor(Math.random() * 1e3),
+    // Simulated - replace with real metrics
+    stableRequests: Math.floor(Math.random() * 9e3),
+    canaryErrors: Math.floor(analysis.metrics.canaryErrorRate * 10),
+    stableErrors: Math.floor(analysis.metrics.stableErrorRate * 10),
+    canaryErrorRate: Math.floor(analysis.metrics.canaryErrorRate * 100),
+    stableErrorRate: Math.floor(analysis.metrics.stableErrorRate * 100),
+    canaryAvgLatency: Math.floor(analysis.metrics.canaryAvgLatency),
+    stableAvgLatency: Math.floor(analysis.metrics.stableAvgLatency),
+    canaryHealthyPods: analysis.metrics.canaryHealthyPods,
+    canaryTotalPods: analysis.metrics.canaryTotalPods,
+    stableHealthyPods: 3,
+    // Simulated
+    stableTotalPods: 3,
+    analysisResult: analysis.analysisResult,
+    analysisNotes: analysis.reasons.join("; ")
+  };
+  const [result] = await db.insert(canaryMetrics).values(metricData);
+  const [metric] = await db.select().from(canaryMetrics).where(eq5(canaryMetrics.id, result.insertId));
+  return metric;
+}
+async function getCanaryMetrics(deploymentId, limit = 100) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(canaryMetrics).where(eq5(canaryMetrics.deploymentId, deploymentId)).orderBy(desc5(canaryMetrics.timestamp)).limit(limit);
+}
+async function analyzeCanaryHealth(deploymentId) {
+  const deployment = await getCanaryDeployment(deploymentId);
+  if (!deployment) {
+    throw new Error("Deployment not found");
+  }
+  const metrics = {
+    canaryErrorRate: Math.random() * 3,
+    // 0-3% error rate
+    stableErrorRate: Math.random() * 1,
+    canaryAvgLatency: 100 + Math.random() * 200,
+    // 100-300ms
+    stableAvgLatency: 100 + Math.random() * 100,
+    canaryHealthyPods: Math.floor(Math.random() * 3) + 1,
+    canaryTotalPods: 3
+  };
+  const reasons = [];
+  let isHealthy = true;
+  let shouldRollback = false;
+  let shouldPromote = false;
+  if (metrics.canaryErrorRate > deployment.errorRateThreshold) {
+    isHealthy = false;
+    reasons.push(`Error rate ${metrics.canaryErrorRate.toFixed(2)}% exceeds threshold ${deployment.errorRateThreshold}%`);
+    if (deployment.rollbackOnErrorRate && deployment.autoRollbackEnabled) {
+      shouldRollback = true;
+    }
+  }
+  if (metrics.canaryAvgLatency > deployment.latencyThresholdMs) {
+    isHealthy = false;
+    reasons.push(`Latency ${metrics.canaryAvgLatency.toFixed(0)}ms exceeds threshold ${deployment.latencyThresholdMs}ms`);
+    if (deployment.rollbackOnLatency && deployment.autoRollbackEnabled) {
+      shouldRollback = true;
+    }
+  }
+  if (metrics.canaryHealthyPods < deployment.minHealthyPods) {
+    isHealthy = false;
+    reasons.push(`Healthy pods ${metrics.canaryHealthyPods} below minimum ${deployment.minHealthyPods}`);
+    if (deployment.rollbackOnPodFailure && deployment.autoRollbackEnabled) {
+      shouldRollback = true;
+    }
+  }
+  if (isHealthy && !shouldRollback) {
+    const successRate = 100 - metrics.canaryErrorRate;
+    if (successRate >= deployment.successRateThreshold) {
+      shouldPromote = true;
+      reasons.push(`Success rate ${successRate.toFixed(2)}% meets threshold ${deployment.successRateThreshold}%`);
+    }
+  }
+  let analysisResult = "inconclusive";
+  if (shouldRollback) {
+    analysisResult = "unhealthy";
+  } else if (isHealthy && shouldPromote) {
+    analysisResult = "healthy";
+  } else if (!isHealthy) {
+    analysisResult = "degraded";
+  }
+  let aiRecommendation;
+  if (analysisResult === "degraded" || analysisResult === "unhealthy") {
+    try {
+      aiRecommendation = await getAIRecommendation(deployment, metrics, reasons);
+    } catch (error) {
+      console.error("Failed to get AI recommendation:", error);
+    }
+  }
+  return {
+    isHealthy,
+    shouldRollback,
+    shouldPromote,
+    analysisResult,
+    reasons,
+    metrics,
+    aiRecommendation
+  };
+}
+async function getAIRecommendation(deployment, metrics, reasons) {
+  const prompt = `Analyze this canary deployment and provide a brief recommendation:
+
+Deployment: ${deployment.name}
+Target: ${deployment.targetDeployment}
+Current Traffic: ${deployment.currentCanaryPercent}%
+Canary Image: ${deployment.canaryImage}
+
+Metrics:
+- Canary Error Rate: ${metrics.canaryErrorRate.toFixed(2)}%
+- Stable Error Rate: ${metrics.stableErrorRate.toFixed(2)}%
+- Canary Latency: ${metrics.canaryAvgLatency.toFixed(0)}ms
+- Stable Latency: ${metrics.stableAvgLatency.toFixed(0)}ms
+- Healthy Pods: ${metrics.canaryHealthyPods}/${metrics.canaryTotalPods}
+
+Issues: ${reasons.join(", ")}
+
+Thresholds:
+- Error Rate: ${deployment.errorRateThreshold}%
+- Latency: ${deployment.latencyThresholdMs}ms
+- Min Healthy Pods: ${deployment.minHealthyPods}
+
+Provide a brief (2-3 sentences) recommendation on whether to rollback, pause, or continue the deployment.`;
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "You are a DevOps expert analyzing canary deployments. Be concise and actionable." },
+      { role: "user", content: prompt }
+    ]
+  });
+  const content = response.choices[0]?.message?.content;
+  return typeof content === "string" ? content : "Unable to generate recommendation";
+}
+async function createCanaryTemplate(userId, template) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(canaryTemplates).values({
+    ...template,
+    userId
+  });
+  const [created] = await db.select().from(canaryTemplates).where(eq5(canaryTemplates.id, result.insertId));
+  return created;
+}
+async function listCanaryTemplates(userId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(canaryTemplates).where(eq5(canaryTemplates.userId, userId)).orderBy(desc5(canaryTemplates.createdAt));
+}
+async function getCanaryTemplate(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [template] = await db.select().from(canaryTemplates).where(eq5(canaryTemplates.id, id));
+  return template || null;
+}
+async function deleteCanaryTemplate(id) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(canaryTemplates).where(eq5(canaryTemplates.id, id));
+}
+
+// server/routers/canary.ts
+var createDeploymentSchema = z14.object({
+  name: z14.string().min(1),
+  namespace: z14.string().optional(),
+  targetDeployment: z14.string().min(1),
+  canaryImage: z14.string().min(1),
+  canaryVersion: z14.string().optional(),
+  stableImage: z14.string().optional(),
+  stableVersion: z14.string().optional(),
+  clusterId: z14.number().optional(),
+  applicationId: z14.number().optional(),
+  trafficSplitType: z14.enum(["percentage", "header", "cookie"]).optional(),
+  initialCanaryPercent: z14.number().min(1).max(100).optional(),
+  targetCanaryPercent: z14.number().min(1).max(100).optional(),
+  incrementPercent: z14.number().min(1).max(100).optional(),
+  incrementIntervalMinutes: z14.number().min(1).optional(),
+  errorRateThreshold: z14.number().min(0).max(100).optional(),
+  latencyThresholdMs: z14.number().min(0).optional(),
+  successRateThreshold: z14.number().min(0).max(100).optional(),
+  minHealthyPods: z14.number().min(1).optional(),
+  autoRollbackEnabled: z14.boolean().optional(),
+  rollbackOnErrorRate: z14.boolean().optional(),
+  rollbackOnLatency: z14.boolean().optional(),
+  rollbackOnPodFailure: z14.boolean().optional(),
+  requireManualApproval: z14.boolean().optional(),
+  gitCommit: z14.string().optional(),
+  gitBranch: z14.string().optional(),
+  pullRequestUrl: z14.string().optional()
+});
+var createTemplateSchema = z14.object({
+  name: z14.string().min(1),
+  description: z14.string().optional(),
+  trafficSplitType: z14.enum(["percentage", "header", "cookie"]).optional(),
+  initialCanaryPercent: z14.number().min(1).max(100).optional(),
+  incrementPercent: z14.number().min(1).max(100).optional(),
+  incrementIntervalMinutes: z14.number().min(1).optional(),
+  errorRateThreshold: z14.number().min(0).max(100).optional(),
+  latencyThresholdMs: z14.number().min(0).optional(),
+  successRateThreshold: z14.number().min(0).max(100).optional(),
+  autoRollbackEnabled: z14.boolean().optional(),
+  requireManualApproval: z14.boolean().optional(),
+  isDefault: z14.boolean().optional()
+});
+var canaryRouter = router({
+  // ============================================
+  // DEPLOYMENT MANAGEMENT
+  // ============================================
+  create: protectedProcedure.input(createDeploymentSchema).mutation(async ({ ctx, input }) => {
+    const config = {
+      ...input
+    };
+    return createCanaryDeployment(ctx.user.id, config);
+  }),
+  get: publicProcedure.input(z14.object({ id: z14.number() })).query(async ({ input }) => {
+    return getCanaryDeployment(input.id);
+  }),
+  list: publicProcedure.input(z14.object({
+    status: z14.string().optional(),
+    limit: z14.number().optional()
+  }).optional()).query(async ({ input }) => {
+    return listCanaryDeployments(void 0, input?.status, input?.limit);
+  }),
+  getSteps: publicProcedure.input(z14.object({ deploymentId: z14.number() })).query(async ({ input }) => {
+    return getDeploymentSteps(input.deploymentId);
+  }),
+  // ============================================
+  // DEPLOYMENT LIFECYCLE
+  // ============================================
+  start: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return startCanaryDeployment(input.id);
+  }),
+  progress: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return progressCanaryDeployment(input.id);
+  }),
+  promote: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return promoteCanaryToStable(input.id);
+  }),
+  pause: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return pauseCanaryDeployment(input.id);
+  }),
+  resume: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return resumeCanaryDeployment(input.id);
+  }),
+  cancel: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    return cancelCanaryDeployment(input.id);
+  }),
+  // ============================================
+  // ROLLBACK
+  // ============================================
+  rollback: protectedProcedure.input(z14.object({
+    deploymentId: z14.number(),
+    reason: z14.string()
+  })).mutation(async ({ ctx, input }) => {
+    return initiateRollback(
+      input.deploymentId,
+      input.reason,
+      "manual",
+      String(ctx.user.id)
+    );
+  }),
+  completeRollback: protectedProcedure.input(z14.object({
+    rollbackId: z14.number(),
+    success: z14.boolean(),
+    errorMessage: z14.string().optional()
+  })).mutation(async ({ input }) => {
+    return completeRollback(input.rollbackId, input.success, input.errorMessage);
+  }),
+  getRollbackHistory: publicProcedure.input(z14.object({ deploymentId: z14.number() })).query(async ({ input }) => {
+    return getRollbackHistory(input.deploymentId);
+  }),
+  // ============================================
+  // METRICS & ANALYSIS
+  // ============================================
+  getMetrics: publicProcedure.input(z14.object({
+    deploymentId: z14.number(),
+    limit: z14.number().optional()
+  })).query(async ({ input }) => {
+    return getCanaryMetrics(input.deploymentId, input.limit);
+  }),
+  analyze: publicProcedure.input(z14.object({ deploymentId: z14.number() })).query(async ({ input }) => {
+    return analyzeCanaryHealth(input.deploymentId);
+  }),
+  // ============================================
+  // TEMPLATES
+  // ============================================
+  createTemplate: protectedProcedure.input(createTemplateSchema).mutation(async ({ ctx, input }) => {
+    return createCanaryTemplate(ctx.user.id, input);
+  }),
+  listTemplates: protectedProcedure.query(async ({ ctx }) => {
+    return listCanaryTemplates(ctx.user.id);
+  }),
+  getTemplate: publicProcedure.input(z14.object({ id: z14.number() })).query(async ({ input }) => {
+    return getCanaryTemplate(input.id);
+  }),
+  deleteTemplate: protectedProcedure.input(z14.object({ id: z14.number() })).mutation(async ({ input }) => {
+    await deleteCanaryTemplate(input.id);
+    return { success: true };
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -6968,7 +7715,8 @@ var appRouter = router({
   email: emailRouter,
   prometheus: prometheusRouter,
   clusters: clustersRouter,
-  health: healthRouter
+  health: healthRouter,
+  canary: canaryRouter
 });
 
 // server/_core/context.ts
