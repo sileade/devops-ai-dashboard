@@ -24,6 +24,7 @@ import ABTesting from "./pages/ABTesting";
 import Clusters from "./pages/Clusters";
 import EmailSettings from "./pages/EmailSettings";
 import PrometheusSettings from "./pages/PrometheusSettings";
+import GitOps from "./pages/GitOps";
 
 function Router() {
   return (
@@ -48,6 +49,7 @@ function Router() {
         <Route path="/clusters" component={Clusters} />
         <Route path="/settings/email" component={EmailSettings} />
         <Route path="/settings/prometheus" component={PrometheusSettings} />
+        <Route path="/gitops" component={GitOps} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

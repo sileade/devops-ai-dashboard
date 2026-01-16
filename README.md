@@ -1,5 +1,9 @@
 # DevOps AI Dashboard
 
+[![CI](https://github.com/sileade/devops-ai-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/sileade/devops-ai-dashboard/actions/workflows/ci.yml)
+[![CD](https://github.com/sileade/devops-ai-dashboard/actions/workflows/cd.yml/badge.svg)](https://github.com/sileade/devops-ai-dashboard/actions/workflows/cd.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive DevOps management platform with AI-powered automation, real-time monitoring, and intelligent scaling capabilities. Built with React, TypeScript, tRPC, and integrated with Docker, Kubernetes, Ansible, and Terraform.
 
 ## Features
@@ -317,6 +321,48 @@ docker compose --profile monitoring --profile traefik up -d
 - Prometheus: http://localhost:9090 (if enabled)
 - Grafana: http://localhost:3001 (if enabled)
 
+### CI/CD with GitHub Actions (NEW)
+
+The platform includes comprehensive CI/CD workflows:
+
+#### Workflows
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **CI** | PR, Push to main | Run tests, lint, type check, security scan |
+| **CD** | Push to main (after CI) | Build Docker image, deploy to staging/production |
+| **Release** | Tag push, Manual | Create GitHub release with artifacts |
+
+#### CI Workflow Features
+- TypeScript type checking
+- Unit tests with Vitest
+- ESLint code quality checks
+- Security scanning with Trivy and CodeQL
+- Dependency vulnerability audit
+
+#### CD Workflow Features
+- Multi-platform Docker builds (amd64, arm64)
+- Push to GitHub Container Registry
+- Automatic deployment to staging
+- Manual approval for production
+- Rollback capability
+
+#### Setup
+
+1. Add repository secrets:
+   - `DEPLOY_HOST`: SSH host for deployment
+   - `DEPLOY_USER`: SSH username
+   - `DEPLOY_KEY`: SSH private key
+   - `SLACK_WEBHOOK_URL`: (Optional) Slack notifications
+
+2. Enable GitHub Actions in repository settings
+
+3. Create a release:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ### GitOps-lite Pull Agent
 
 The Pull Agent enables automatic deployments from GitHub:
@@ -327,6 +373,9 @@ The Pull Agent enables automatic deployments from GitHub:
 - **Auto Rollback**: Reverts to previous version on failed deployment
 - **Notifications**: Slack, Telegram, and custom webhook support
 - **Health Checks**: Validates deployment before completing
+- **Web Interface**: Built-in UI for manual control (NEW)
+- **GitHub Actions Integration**: View workflow status (NEW)
+- **Real-time Logs**: WebSocket-based live logging (NEW)
 
 #### GitHub Webhook Setup
 
@@ -348,6 +397,12 @@ The Pull Agent enables automatic deployments from GitHub:
 | `/check-updates` | GET | Check for available updates |
 | `/rollback` | POST | Rollback to specific commit |
 | `/history` | GET | Deployment history |
+| `/logs` | GET | Deployment logs |
+| `/commits` | GET | Git commit history |
+| `/containers` | GET | Docker containers status |
+| `/github/actions` | GET | GitHub Actions runs |
+| `/github/trigger-workflow` | POST | Trigger GitHub workflow |
+| `/ws` | WebSocket | Real-time logs and status |
 
 ### Manual Setup (Development)
 

@@ -342,3 +342,26 @@
 - [x] Add GitOps workflow documentation
 - [x] Create troubleshooting guide
 - [x] Test full deployment workflow
+
+
+## Phase 12: CI/CD & GitOps Web Interface
+
+### GitHub Actions CI/CD
+- [x] Create main CI workflow (test on PR/push)
+- [x] Create CD workflow (deploy on main branch)
+- [x] Add Docker build and push to registry
+- [x] Add security scanning (Trivy, CodeQL)
+- [x] Add release workflow with versioning
+
+### GitOps Web Interface
+- [x] Add web UI to Pull Agent for manual control
+- [x] Create GitOps page in dashboard
+- [x] Add deployment history view
+- [x] Add manual pull/deploy buttons
+- [x] Add rollback UI
+- [x] Real-time deployment logs
+- [x] Integration with GitHub Actions status
+
+### Documentation
+- [x] Update README with CI/CD setup
+- [x] Add GitHub Actions badge

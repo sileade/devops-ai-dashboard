@@ -9,6 +9,8 @@
  * - Автоматический git pull и rebuild
  * - Rollback при неудачном деплое
  * - Уведомления о статусе деплоя
+ * - Веб-интерфейс для управления
+ * - Интеграция с GitHub Actions
  */
 
 import express from 'express';
@@ -19,6 +21,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import fetch from 'node-fetch';
 import Docker from 'dockerode';
+import { WebSocketServer } from 'ws';
+import http from 'http';
 
 const execAsync = promisify(exec);
 
@@ -28,6 +32,7 @@ const config = {
   githubRepo: process.env.GITHUB_REPO || 'sileade/devops-ai-dashboard',
   githubBranch: process.env.GITHUB_BRANCH || 'main',
   webhookSecret: process.env.GITHUB_WEBHOOK_SECRET || '',
+  githubToken: process.env.GITHUB_TOKEN || '',
   
   // Polling settings
   pollInterval: parseInt(process.env.POLL_INTERVAL || '300') * 1000, // Convert to ms
@@ -52,6 +57,9 @@ const config = {
   maxRetries: parseInt(process.env.MAX_RETRIES || '3'),
   healthCheckTimeout: parseInt(process.env.HEALTH_CHECK_TIMEOUT || '60') * 1000,
   rollbackEnabled: process.env.ROLLBACK_ENABLED !== 'false',
+  
+  // Deploy secret for manual triggers
+  deploySecret: process.env.DEPLOY_SECRET || '',
 };
 
 // State
@@ -62,22 +70,72 @@ const state = {
   isDeploying: false,
   failedAttempts: 0,
   lastPollTime: null,
+  logs: [],
+  githubActionsRuns: [],
 };
+
+// WebSocket clients
+const wsClients = new Set();
 
 // Docker client
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 // Express app
 const app = express();
+const server = http.createServer(app);
+
+// WebSocket server for real-time logs
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+wss.on('connection', (ws) => {
+  wsClients.add(ws);
+  
+  // Send current state
+  ws.send(JSON.stringify({
+    type: 'state',
+    data: {
+      isDeploying: state.isDeploying,
+      lastDeployment: state.lastDeployment,
+      lastCommit: state.lastCommit,
+      logs: state.logs.slice(-100),
+    },
+  }));
+  
+  ws.on('close', () => {
+    wsClients.delete(ws);
+  });
+});
+
+// Broadcast to all WebSocket clients
+function broadcast(type, data) {
+  const message = JSON.stringify({ type, data });
+  wsClients.forEach(client => {
+    if (client.readyState === 1) { // OPEN
+      client.send(message);
+    }
+  });
+}
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
+
+// CORS for web interface
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Deploy-Secret');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
 /**
- * Логирование с временной меткой
+ * Логирование с временной меткой и broadcast
  */
 function log(level, message, data = {}) {
   const timestamp = new Date().toISOString();
@@ -88,6 +146,15 @@ function log(level, message, data = {}) {
     ...data,
   };
   console.log(JSON.stringify(logEntry));
+  
+  // Add to state logs
+  state.logs.push(logEntry);
+  if (state.logs.length > 500) {
+    state.logs = state.logs.slice(-500);
+  }
+  
+  // Broadcast to WebSocket clients
+  broadcast('log', logEntry);
   
   // Save to file
   saveLogEntry(logEntry).catch(console.error);
@@ -160,7 +227,7 @@ async function sendNotification(title, message, status = 'info') {
 }
 
 /**
- * Выполнение команды с таймаутом
+ * Выполнение команды с таймаутом и streaming
  */
 async function execWithTimeout(command, options = {}, timeout = 300000) {
   return new Promise((resolve, reject) => {
@@ -171,7 +238,136 @@ async function execWithTimeout(command, options = {}, timeout = 300000) {
         resolve({ stdout, stderr });
       }
     });
+    
+    // Stream output to WebSocket
+    if (proc.stdout) {
+      proc.stdout.on('data', (data) => {
+        broadcast('output', { stream: 'stdout', data: data.toString() });
+      });
+    }
+    if (proc.stderr) {
+      proc.stderr.on('data', (data) => {
+        broadcast('output', { stream: 'stderr', data: data.toString() });
+      });
+    }
   });
+}
+
+// ============================================
+// GITHUB ACTIONS INTEGRATION
+// ============================================
+
+/**
+ * Получение статуса GitHub Actions
+ */
+async function getGitHubActionsRuns() {
+  if (!config.githubToken) {
+    return [];
+  }
+  
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${config.githubRepo}/actions/runs?per_page=10`,
+      {
+        headers: {
+          'Authorization': `Bearer ${config.githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    state.githubActionsRuns = data.workflow_runs.map(run => ({
+      id: run.id,
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      branch: run.head_branch,
+      commit: run.head_sha,
+      actor: run.actor?.login,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+      url: run.html_url,
+    }));
+    
+    return state.githubActionsRuns;
+  } catch (error) {
+    log('error', 'Failed to get GitHub Actions runs', { error: error.message });
+    return [];
+  }
+}
+
+/**
+ * Получение логов GitHub Actions run
+ */
+async function getGitHubActionsLogs(runId) {
+  if (!config.githubToken) {
+    return null;
+  }
+  
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${config.githubRepo}/actions/runs/${runId}/logs`,
+      {
+        headers: {
+          'Authorization': `Bearer ${config.githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+    
+    // Returns a redirect to download URL
+    return response.url;
+  } catch (error) {
+    log('error', 'Failed to get GitHub Actions logs', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Trigger GitHub Actions workflow
+ */
+async function triggerGitHubWorkflow(workflowId, inputs = {}) {
+  if (!config.githubToken) {
+    return { success: false, error: 'GitHub token not configured' };
+  }
+  
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${config.githubRepo}/actions/workflows/${workflowId}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ref: config.githubBranch,
+          inputs,
+        }),
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`GitHub API error: ${response.status} - ${error}`);
+    }
+    
+    log('info', 'GitHub workflow triggered', { workflowId, inputs });
+    return { success: true };
+  } catch (error) {
+    log('error', 'Failed to trigger GitHub workflow', { error: error.message });
+    return { success: false, error: error.message };
+  }
 }
 
 // ============================================
@@ -192,6 +388,22 @@ async function getCurrentCommit() {
 }
 
 /**
+ * Получение информации о коммите
+ */
+async function getCommitInfo(commit) {
+  try {
+    const { stdout } = await execAsync(
+      `git log -1 --format='{"sha":"%H","shortSha":"%h","author":"%an","email":"%ae","date":"%ci","message":"%s"}' ${commit}`,
+      { cwd: config.repoPath }
+    );
+    return JSON.parse(stdout.trim());
+  } catch (error) {
+    log('error', 'Failed to get commit info', { error: error.message });
+    return null;
+  }
+}
+
+/**
  * Получение последнего коммита из remote
  */
 async function getRemoteCommit() {
@@ -206,6 +418,26 @@ async function getRemoteCommit() {
 }
 
 /**
+ * Получение списка коммитов
+ */
+async function getCommitHistory(limit = 20) {
+  try {
+    const { stdout } = await execAsync(
+      `git log -${limit} --format='%H|%h|%an|%ci|%s' origin/${config.githubBranch}`,
+      { cwd: config.repoPath }
+    );
+    
+    return stdout.trim().split('\n').filter(Boolean).map(line => {
+      const [sha, shortSha, author, date, message] = line.split('|');
+      return { sha, shortSha, author, date, message };
+    });
+  } catch (error) {
+    log('error', 'Failed to get commit history', { error: error.message });
+    return [];
+  }
+}
+
+/**
  * Проверка наличия обновлений
  */
 async function checkForUpdates() {
@@ -216,10 +448,15 @@ async function checkForUpdates() {
     return { hasUpdates: false, error: 'Failed to get commits' };
   }
   
+  const currentInfo = await getCommitInfo(currentCommit);
+  const remoteInfo = await getCommitInfo(remoteCommit);
+  
   return {
     hasUpdates: currentCommit !== remoteCommit,
     currentCommit,
     remoteCommit,
+    currentInfo,
+    remoteInfo,
   };
 }
 
@@ -232,7 +469,11 @@ async function gitPull() {
     await execAsync('git stash', { cwd: config.repoPath }).catch(() => {});
     
     // Pull latest changes
-    const { stdout } = await execAsync(`git pull origin ${config.githubBranch}`, { cwd: config.repoPath });
+    const { stdout } = await execWithTimeout(
+      `git pull origin ${config.githubBranch}`,
+      { cwd: config.repoPath },
+      60000
+    );
     
     log('info', 'Git pull successful', { output: stdout.trim() });
     return { success: true, output: stdout };
@@ -262,11 +503,32 @@ async function getAppContainer() {
 }
 
 /**
+ * Получение статуса всех контейнеров
+ */
+async function getContainersStatus() {
+  try {
+    const containers = await docker.listContainers({ all: true });
+    return containers.map(c => ({
+      id: c.Id.substring(0, 12),
+      name: c.Names[0]?.replace('/', ''),
+      image: c.Image,
+      state: c.State,
+      status: c.Status,
+      created: c.Created,
+    }));
+  } catch (error) {
+    log('error', 'Failed to get containers status', { error: error.message });
+    return [];
+  }
+}
+
+/**
  * Rebuild и restart контейнера
  */
 async function rebuildAndRestart() {
   try {
     log('info', 'Starting rebuild process');
+    broadcast('deployment', { phase: 'build', status: 'running' });
     
     // Build new image
     const buildResult = await execWithTimeout(
@@ -275,18 +537,22 @@ async function rebuildAndRestart() {
       600000 // 10 minutes timeout
     );
     log('info', 'Build completed', { output: buildResult.stdout });
+    broadcast('deployment', { phase: 'build', status: 'completed' });
     
     // Restart container
+    broadcast('deployment', { phase: 'restart', status: 'running' });
     const restartResult = await execWithTimeout(
       'docker-compose up -d app',
       { cwd: config.repoPath },
       120000 // 2 minutes timeout
     );
     log('info', 'Container restarted', { output: restartResult.stdout });
+    broadcast('deployment', { phase: 'restart', status: 'completed' });
     
     return { success: true };
   } catch (error) {
     log('error', 'Rebuild failed', { error: error.message });
+    broadcast('deployment', { phase: 'build', status: 'failed', error: error.message });
     return { success: false, error: error.message };
   }
 }
@@ -297,6 +563,8 @@ async function rebuildAndRestart() {
 async function healthCheck(timeout = config.healthCheckTimeout) {
   const startTime = Date.now();
   const checkInterval = 5000; // 5 seconds
+  
+  broadcast('deployment', { phase: 'health', status: 'running' });
   
   while (Date.now() - startTime < timeout) {
     try {
@@ -313,9 +581,10 @@ async function healthCheck(timeout = config.healthCheckTimeout) {
       }
       
       // Check HTTP health endpoint
-      const response = await fetch('http://localhost:3000/api/health', { timeout: 5000 });
+      const response = await fetch('http://localhost:3000/api/trpc/health.check', { timeout: 5000 });
       if (response.ok) {
         log('info', 'Health check passed');
+        broadcast('deployment', { phase: 'health', status: 'completed' });
         return { healthy: true };
       }
     } catch (error) {
@@ -326,6 +595,7 @@ async function healthCheck(timeout = config.healthCheckTimeout) {
   }
   
   log('error', 'Health check failed - timeout');
+  broadcast('deployment', { phase: 'health', status: 'failed', error: 'Timeout' });
   return { healthy: false, error: 'Timeout' };
 }
 
@@ -340,6 +610,7 @@ async function rollback(previousCommit) {
   
   try {
     log('info', 'Starting rollback', { targetCommit: previousCommit });
+    broadcast('deployment', { phase: 'rollback', status: 'running', commit: previousCommit });
     
     // Reset to previous commit
     await execAsync(`git reset --hard ${previousCommit}`, { cwd: config.repoPath });
@@ -357,6 +628,8 @@ async function rollback(previousCommit) {
     }
     
     log('info', 'Rollback successful');
+    broadcast('deployment', { phase: 'rollback', status: 'completed' });
+    
     await sendNotification(
       'Rollback Completed',
       `Successfully rolled back to commit ${previousCommit.substring(0, 7)}`,
@@ -366,6 +639,7 @@ async function rollback(previousCommit) {
     return { success: true };
   } catch (error) {
     log('error', 'Rollback failed', { error: error.message });
+    broadcast('deployment', { phase: 'rollback', status: 'failed', error: error.message });
     return { success: false, error: error.message };
   }
 }
@@ -377,7 +651,7 @@ async function rollback(previousCommit) {
 /**
  * Основной процесс деплоя
  */
-async function deploy(trigger = 'manual') {
+async function deploy(trigger = 'manual', options = {}) {
   if (state.isDeploying) {
     log('warn', 'Deployment already in progress');
     return { success: false, error: 'Deployment in progress' };
@@ -393,9 +667,12 @@ async function deploy(trigger = 'manual') {
     startTime: new Date().toISOString(),
     previousCommit,
     status: 'running',
+    phases: [],
+    options,
   };
   
   state.lastDeployment = deployment;
+  broadcast('state', { isDeploying: true, lastDeployment: deployment });
   
   try {
     log('info', 'Starting deployment', { trigger, previousCommit });
@@ -406,25 +683,37 @@ async function deploy(trigger = 'manual') {
     );
     
     // Step 1: Git pull
+    deployment.phases.push({ name: 'pull', status: 'running', startTime: Date.now() });
+    broadcast('deployment', { phase: 'pull', status: 'running' });
+    
     const pullResult = await gitPull();
     if (!pullResult.success) {
       throw new Error(`Git pull failed: ${pullResult.error}`);
     }
     
+    deployment.phases[deployment.phases.length - 1].status = 'completed';
+    broadcast('deployment', { phase: 'pull', status: 'completed' });
+    
     const newCommit = await getCurrentCommit();
+    const commitInfo = await getCommitInfo(newCommit);
     deployment.newCommit = newCommit;
+    deployment.commitInfo = commitInfo;
     
     // Step 2: Rebuild and restart
+    deployment.phases.push({ name: 'build', status: 'running', startTime: Date.now() });
     const rebuildResult = await rebuildAndRestart();
     if (!rebuildResult.success) {
       throw new Error(`Rebuild failed: ${rebuildResult.error}`);
     }
+    deployment.phases[deployment.phases.length - 1].status = 'completed';
     
     // Step 3: Health check
+    deployment.phases.push({ name: 'health', status: 'running', startTime: Date.now() });
     const health = await healthCheck();
     if (!health.healthy) {
       throw new Error('Health check failed');
     }
+    deployment.phases[deployment.phases.length - 1].status = 'completed';
     
     // Success!
     deployment.status = 'success';
@@ -445,9 +734,15 @@ async function deploy(trigger = 'manual') {
       newCommit: newCommit?.substring(0, 7),
     });
     
+    broadcast('state', { 
+      isDeploying: false, 
+      lastDeployment: deployment,
+      lastCommit: newCommit,
+    });
+    
     await sendNotification(
       'Deployment Successful',
-      `Successfully deployed commit ${newCommit?.substring(0, 7)} in ${Math.round(deployment.duration / 1000)}s`,
+      `Successfully deployed commit ${newCommit?.substring(0, 7)} in ${Math.round(deployment.duration / 1000)}s\n\nMessage: ${commitInfo?.message || 'N/A'}`,
       'success'
     );
     
@@ -467,8 +762,10 @@ async function deploy(trigger = 'manual') {
       failedAttempts: state.failedAttempts,
     });
     
+    broadcast('state', { isDeploying: false, lastDeployment: deployment });
+    
     // Try rollback
-    if (config.rollbackEnabled && previousCommit) {
+    if (config.rollbackEnabled && previousCommit && !options.skipRollback) {
       log('info', 'Attempting rollback');
       await rollback(previousCommit);
     }
@@ -522,9 +819,445 @@ function verifyGitHubSignature(payload, signature) {
   }
 }
 
+/**
+ * Verify deploy secret
+ */
+function verifyDeploySecret(req) {
+  if (!config.deploySecret) {
+    return true;
+  }
+  
+  const secret = req.headers['x-deploy-secret'] || req.body?.secret;
+  return secret === config.deploySecret;
+}
+
+// ============================================
+// WEB INTERFACE
+// ============================================
+
+// Serve static web interface
+const webInterfaceHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitOps Pull Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            dark: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .log-entry { font-family: monospace; font-size: 12px; }
+    .log-info { color: #60a5fa; }
+    .log-warn { color: #fbbf24; }
+    .log-error { color: #f87171; }
+    .log-success { color: #34d399; }
+    .phase-running { animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body class="dark bg-dark-bg text-gray-100 min-h-screen">
+  <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-white mb-2">GitOps Pull Agent</h1>
+      <p class="text-gray-400">Automated deployment management</p>
+    </header>
+    
+    <!-- Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
+        <div class="text-gray-400 text-sm mb-1">Status</div>
+        <div id="status" class="text-xl font-semibold">Loading...</div>
+      </div>
+      <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
+        <div class="text-gray-400 text-sm mb-1">Current Commit</div>
+        <div id="currentCommit" class="text-xl font-mono">Loading...</div>
+      </div>
+      <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
+        <div class="text-gray-400 text-sm mb-1">Last Deployment</div>
+        <div id="lastDeployment" class="text-xl">Loading...</div>
+      </div>
+    </div>
+    
+    <!-- Actions -->
+    <div class="bg-dark-card rounded-lg p-6 border border-dark-border mb-8">
+      <h2 class="text-xl font-semibold mb-4">Actions</h2>
+      <div class="flex flex-wrap gap-4">
+        <button id="btnCheckUpdates" onclick="checkUpdates()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+          Check for Updates
+        </button>
+        <button id="btnPull" onclick="triggerPull()" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition">
+          Pull & Deploy
+        </button>
+        <button id="btnRollback" onclick="showRollbackModal()" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition">
+          Rollback
+        </button>
+        <button id="btnTriggerCI" onclick="triggerCI()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition">
+          Trigger CI/CD
+        </button>
+      </div>
+      
+      <div id="updateInfo" class="mt-4 hidden">
+        <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+          <div class="font-semibold mb-2">Update Available</div>
+          <div id="updateDetails" class="text-sm text-gray-300"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Deployment Progress -->
+    <div id="deploymentProgress" class="bg-dark-card rounded-lg p-6 border border-dark-border mb-8 hidden">
+      <h2 class="text-xl font-semibold mb-4">Deployment Progress</h2>
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <div id="phase-pull" class="w-4 h-4 rounded-full bg-gray-600"></div>
+          <span>Git Pull</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="phase-build" class="w-4 h-4 rounded-full bg-gray-600"></div>
+          <span>Build & Restart</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="phase-health" class="w-4 h-4 rounded-full bg-gray-600"></div>
+          <span>Health Check</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Logs -->
+    <div class="bg-dark-card rounded-lg p-6 border border-dark-border mb-8">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Live Logs</h2>
+        <button onclick="clearLogs()" class="text-sm text-gray-400 hover:text-white">Clear</button>
+      </div>
+      <div id="logs" class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+        <div class="text-gray-500">Connecting...</div>
+      </div>
+    </div>
+    
+    <!-- Deployment History -->
+    <div class="bg-dark-card rounded-lg p-6 border border-dark-border mb-8">
+      <h2 class="text-xl font-semibold mb-4">Deployment History</h2>
+      <div id="history" class="space-y-2">
+        <div class="text-gray-500">Loading...</div>
+      </div>
+    </div>
+    
+    <!-- GitHub Actions -->
+    <div class="bg-dark-card rounded-lg p-6 border border-dark-border">
+      <h2 class="text-xl font-semibold mb-4">GitHub Actions</h2>
+      <div id="githubActions" class="space-y-2">
+        <div class="text-gray-500">Loading...</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Rollback Modal -->
+  <div id="rollbackModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-dark-card rounded-lg p-6 max-w-md w-full mx-4 border border-dark-border">
+      <h3 class="text-xl font-semibold mb-4">Rollback to Previous Version</h3>
+      <div id="commitList" class="space-y-2 max-h-64 overflow-y-auto mb-4">
+        Loading commits...
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="hideRollbackModal()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg">Cancel</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let ws;
+    const logs = [];
+    
+    function connect() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+      
+      ws.onopen = () => {
+        addLog('info', 'Connected to Pull Agent');
+        loadData();
+      };
+      
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+      };
+      
+      ws.onclose = () => {
+        addLog('warn', 'Disconnected, reconnecting...');
+        setTimeout(connect, 3000);
+      };
+    }
+    
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'state':
+          updateState(msg.data);
+          break;
+        case 'log':
+          addLog(msg.data.level, msg.data.message);
+          break;
+        case 'output':
+          addLog('info', msg.data.data.trim());
+          break;
+        case 'deployment':
+          updateDeploymentPhase(msg.data);
+          break;
+      }
+    }
+    
+    function updateState(data) {
+      if (data.isDeploying !== undefined) {
+        document.getElementById('status').textContent = data.isDeploying ? 'Deploying...' : 'Idle';
+        document.getElementById('status').className = data.isDeploying ? 'text-xl font-semibold text-yellow-400 phase-running' : 'text-xl font-semibold text-green-400';
+        document.getElementById('deploymentProgress').classList.toggle('hidden', !data.isDeploying);
+        
+        // Disable buttons during deployment
+        document.getElementById('btnPull').disabled = data.isDeploying;
+        document.getElementById('btnRollback').disabled = data.isDeploying;
+      }
+      
+      if (data.lastCommit) {
+        document.getElementById('currentCommit').textContent = data.lastCommit.substring(0, 7);
+      }
+      
+      if (data.lastDeployment) {
+        const d = data.lastDeployment;
+        const status = d.status === 'success' ? '✅' : d.status === 'failed' ? '❌' : '🔄';
+        const time = d.endTime ? new Date(d.endTime).toLocaleTimeString() : 'In progress';
+        document.getElementById('lastDeployment').textContent = status + ' ' + time;
+      }
+      
+      if (data.logs) {
+        data.logs.forEach(l => addLog(l.level, l.message, false));
+        scrollLogs();
+      }
+    }
+    
+    function updateDeploymentPhase(data) {
+      const el = document.getElementById('phase-' + data.phase);
+      if (el) {
+        el.className = 'w-4 h-4 rounded-full ' + 
+          (data.status === 'running' ? 'bg-yellow-500 phase-running' :
+           data.status === 'completed' ? 'bg-green-500' :
+           data.status === 'failed' ? 'bg-red-500' : 'bg-gray-600');
+      }
+    }
+    
+    function addLog(level, message, scroll = true) {
+      const logsEl = document.getElementById('logs');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry log-' + level;
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = '[' + time + '] ' + message;
+      logsEl.appendChild(entry);
+      
+      if (scroll) scrollLogs();
+    }
+    
+    function scrollLogs() {
+      const logsEl = document.getElementById('logs');
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+    
+    function clearLogs() {
+      document.getElementById('logs').innerHTML = '';
+    }
+    
+    async function loadData() {
+      // Load status
+      const status = await fetch('/status').then(r => r.json());
+      updateState({
+        isDeploying: status.state.isDeploying,
+        lastCommit: status.state.lastCommit,
+        lastDeployment: status.state.lastDeployment,
+      });
+      
+      // Load history
+      const history = await fetch('/history').then(r => r.json());
+      renderHistory(history.deployments);
+      
+      // Load GitHub Actions
+      const actions = await fetch('/github/actions').then(r => r.json());
+      renderGitHubActions(actions);
+    }
+    
+    function renderHistory(deployments) {
+      const el = document.getElementById('history');
+      if (!deployments.length) {
+        el.innerHTML = '<div class="text-gray-500">No deployments yet</div>';
+        return;
+      }
+      
+      el.innerHTML = deployments.map(d => {
+        const status = d.status === 'success' ? '✅' : d.status === 'failed' ? '❌' : '🔄';
+        const time = new Date(d.startTime).toLocaleString();
+        const duration = d.duration ? Math.round(d.duration / 1000) + 's' : '-';
+        const commit = d.newCommit?.substring(0, 7) || '-';
+        
+        return '<div class="flex items-center justify-between py-2 border-b border-dark-border">' +
+          '<div class="flex items-center gap-3">' +
+            '<span>' + status + '</span>' +
+            '<span class="font-mono">' + commit + '</span>' +
+            '<span class="text-gray-400 text-sm">' + d.trigger + '</span>' +
+          '</div>' +
+          '<div class="text-gray-400 text-sm">' + time + ' (' + duration + ')</div>' +
+        '</div>';
+      }).join('');
+    }
+    
+    function renderGitHubActions(runs) {
+      const el = document.getElementById('githubActions');
+      if (!runs.length) {
+        el.innerHTML = '<div class="text-gray-500">No GitHub Actions runs found</div>';
+        return;
+      }
+      
+      el.innerHTML = runs.map(r => {
+        const status = r.conclusion === 'success' ? '✅' : 
+                       r.conclusion === 'failure' ? '❌' : 
+                       r.status === 'in_progress' ? '🔄' : '⏸️';
+        const time = new Date(r.createdAt).toLocaleString();
+        
+        return '<a href="' + r.url + '" target="_blank" class="flex items-center justify-between py-2 border-b border-dark-border hover:bg-dark-border/30">' +
+          '<div class="flex items-center gap-3">' +
+            '<span>' + status + '</span>' +
+            '<span>' + r.name + '</span>' +
+            '<span class="text-gray-400 text-sm">' + r.branch + '</span>' +
+          '</div>' +
+          '<div class="text-gray-400 text-sm">' + time + '</div>' +
+        '</a>';
+      }).join('');
+    }
+    
+    async function checkUpdates() {
+      const btn = document.getElementById('btnCheckUpdates');
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      
+      try {
+        const result = await fetch('/check-updates').then(r => r.json());
+        
+        if (result.hasUpdates) {
+          document.getElementById('updateInfo').classList.remove('hidden');
+          document.getElementById('updateDetails').innerHTML = 
+            '<div>Current: <span class="font-mono">' + result.currentCommit?.substring(0, 7) + '</span></div>' +
+            '<div>Remote: <span class="font-mono">' + result.remoteCommit?.substring(0, 7) + '</span></div>' +
+            (result.remoteInfo ? '<div class="mt-2">' + result.remoteInfo.message + '</div>' : '');
+        } else {
+          addLog('info', 'No updates available');
+          document.getElementById('updateInfo').classList.add('hidden');
+        }
+      } catch (e) {
+        addLog('error', 'Failed to check updates: ' + e.message);
+      }
+      
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
+    }
+    
+    async function triggerPull() {
+      if (!confirm('Start deployment?')) return;
+      
+      try {
+        await fetch('/deploy', { method: 'POST' });
+        addLog('info', 'Deployment triggered');
+      } catch (e) {
+        addLog('error', 'Failed to trigger deployment: ' + e.message);
+      }
+    }
+    
+    async function showRollbackModal() {
+      document.getElementById('rollbackModal').classList.remove('hidden');
+      document.getElementById('rollbackModal').classList.add('flex');
+      
+      const commits = await fetch('/commits').then(r => r.json());
+      const el = document.getElementById('commitList');
+      
+      el.innerHTML = commits.map(c => 
+        '<button onclick="doRollback(\\'' + c.sha + '\\')" class="w-full text-left p-2 hover:bg-dark-border rounded flex justify-between">' +
+          '<span class="font-mono">' + c.shortSha + '</span>' +
+          '<span class="text-gray-400 text-sm truncate ml-2">' + c.message + '</span>' +
+        '</button>'
+      ).join('');
+    }
+    
+    function hideRollbackModal() {
+      document.getElementById('rollbackModal').classList.add('hidden');
+      document.getElementById('rollbackModal').classList.remove('flex');
+    }
+    
+    async function doRollback(commit) {
+      if (!confirm('Rollback to ' + commit.substring(0, 7) + '?')) return;
+      
+      hideRollbackModal();
+      
+      try {
+        await fetch('/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commit })
+        });
+        addLog('info', 'Rollback triggered');
+      } catch (e) {
+        addLog('error', 'Failed to trigger rollback: ' + e.message);
+      }
+    }
+    
+    async function triggerCI() {
+      if (!confirm('Trigger CI/CD workflow?')) return;
+      
+      try {
+        const result = await fetch('/github/trigger-workflow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflow: 'cd.yml' })
+        }).then(r => r.json());
+        
+        if (result.success) {
+          addLog('success', 'CI/CD workflow triggered');
+        } else {
+          addLog('error', 'Failed to trigger workflow: ' + result.error);
+        }
+      } catch (e) {
+        addLog('error', 'Failed to trigger CI/CD: ' + e.message);
+      }
+    }
+    
+    // Start
+    connect();
+    setInterval(loadData, 30000); // Refresh every 30s
+  </script>
+</body>
+</html>
+`;
+
 // ============================================
 // API ROUTES
 // ============================================
+
+// Serve web interface
+app.get('/', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(webInterfaceHTML);
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -589,6 +1322,21 @@ app.post('/webhook/github', async (req, res) => {
     }
   }
   
+  // Handle workflow_run events (GitHub Actions)
+  if (event === 'workflow_run') {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    log('info', 'Workflow run event', { 
+      action: body.action, 
+      conclusion: body.workflow_run?.conclusion,
+      name: body.workflow_run?.name,
+    });
+    
+    // Refresh GitHub Actions status
+    getGitHubActionsRuns().catch(console.error);
+    
+    return res.json({ message: 'Workflow event received' });
+  }
+  
   // Handle ping events
   if (event === 'ping') {
     log('info', 'Webhook ping received');
@@ -600,7 +1348,11 @@ app.post('/webhook/github', async (req, res) => {
 
 // Manual deploy endpoint
 app.post('/deploy', async (req, res) => {
-  const { force = false } = req.body || {};
+  const { force = false, skipRollback = false } = req.body || {};
+  
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
   
   if (state.isDeploying && !force) {
     return res.status(409).json({ error: 'Deployment in progress' });
@@ -609,7 +1361,7 @@ app.post('/deploy', async (req, res) => {
   log('info', 'Manual deployment triggered');
   
   // Start deployment asynchronously
-  deploy('manual').catch(console.error);
+  deploy('manual', { skipRollback }).catch(console.error);
   
   res.json({ message: 'Deployment triggered' });
 });
@@ -620,9 +1372,20 @@ app.get('/check-updates', async (req, res) => {
   res.json(result);
 });
 
+// Get commit history
+app.get('/commits', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 20;
+  const commits = await getCommitHistory(limit);
+  res.json(commits);
+});
+
 // Rollback endpoint
 app.post('/rollback', async (req, res) => {
   const { commit } = req.body || {};
+  
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
   
   if (!commit) {
     return res.status(400).json({ error: 'Commit hash required' });
@@ -647,6 +1410,46 @@ app.get('/history', (req, res) => {
   });
 });
 
+// Get logs
+app.get('/logs', (req, res) => {
+  const limit = parseInt(req.query.limit) || 100;
+  res.json({
+    logs: state.logs.slice(-limit),
+    total: state.logs.length,
+  });
+});
+
+// Get containers status
+app.get('/containers', async (req, res) => {
+  const containers = await getContainersStatus();
+  res.json(containers);
+});
+
+// GitHub Actions endpoints
+app.get('/github/actions', async (req, res) => {
+  const runs = await getGitHubActionsRuns();
+  res.json(runs);
+});
+
+app.get('/github/actions/:runId/logs', async (req, res) => {
+  const logsUrl = await getGitHubActionsLogs(req.params.runId);
+  if (logsUrl) {
+    res.redirect(logsUrl);
+  } else {
+    res.status(404).json({ error: 'Logs not found' });
+  }
+});
+
+app.post('/github/trigger-workflow', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+  
+  const { workflow = 'cd.yml', inputs = {} } = req.body || {};
+  const result = await triggerGitHubWorkflow(workflow, inputs);
+  res.json(result);
+});
+
 // ============================================
 // POLLING
 // ============================================
@@ -664,6 +1467,9 @@ async function poll() {
       log('info', 'Updates detected via polling', { currentCommit, remoteCommit });
       await deploy('poll');
     }
+    
+    // Also refresh GitHub Actions
+    await getGitHubActionsRuns();
   } catch (error) {
     log('error', 'Polling error', { error: error.message });
   }
@@ -674,6 +1480,9 @@ async function poll() {
 // ============================================
 
 async function init() {
+  // Ensure data directory exists
+  await fs.mkdir(config.dataPath, { recursive: true }).catch(() => {});
+  
   // Load state from file
   try {
     const stateFile = path.join(config.dataPath, 'state.json');
@@ -712,12 +1521,13 @@ async function init() {
   }
   
   // Start server
-  app.listen(config.webhookPort, '0.0.0.0', () => {
+  server.listen(config.webhookPort, '0.0.0.0', () => {
     log('info', 'Pull Agent started', {
       port: config.webhookPort,
       repo: config.githubRepo,
       branch: config.githubBranch,
       pollInterval: config.pollInterval / 1000,
+      webUI: `http://localhost:${config.webhookPort}`,
     });
   });
 }
