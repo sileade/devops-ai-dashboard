@@ -888,8 +888,8 @@ async function getAggregatedMetrics(hours = 24) {
     return { avgCpu: 0, avgMemory: 0, maxCpu: 0, maxMemory: 0, dataPoints: 0 };
   }
   try {
-    const startTime = new Date(Date.now() - hours * 60 * 60 * 1e3);
-    const results = await db.select().from(metricsHistory).where(gte(metricsHistory.timestamp, startTime)).orderBy(desc(metricsHistory.timestamp));
+    const startTime2 = new Date(Date.now() - hours * 60 * 60 * 1e3);
+    const results = await db.select().from(metricsHistory).where(gte(metricsHistory.timestamp, startTime2)).orderBy(desc(metricsHistory.timestamp));
     if (results.length === 0) {
       return { avgCpu: 0, avgMemory: 0, maxCpu: 0, maxMemory: 0, dataPoints: 0 };
     }
@@ -3946,12 +3946,12 @@ var metricsRouter = router({
     // Max 7 days
     limit: z7.number().min(1).max(5e3).default(1e3)
   }).optional()).query(async ({ input }) => {
-    const startTime = new Date(Date.now() - (input?.hours || 24) * 60 * 60 * 1e3);
+    const startTime2 = new Date(Date.now() - (input?.hours || 24) * 60 * 60 * 1e3);
     return getMetricsHistory({
       source: input?.source,
       resourceType: input?.resourceType,
       resourceId: input?.resourceId,
-      startTime,
+      startTime: startTime2,
       limit: input?.limit
     });
   }),
@@ -4039,13 +4039,13 @@ var alertHistoryRouter = router({
     hours: z7.number().min(1).max(168).optional(),
     limit: z7.number().min(1).max(500).default(100)
   }).optional()).query(async ({ input }) => {
-    const startTime = input?.hours ? new Date(Date.now() - input.hours * 60 * 60 * 1e3) : void 0;
+    const startTime2 = input?.hours ? new Date(Date.now() - input.hours * 60 * 60 * 1e3) : void 0;
     return getAlertHistory({
       severity: input?.severity,
       metricType: input?.metricType,
       acknowledgedOnly: input?.acknowledgedOnly,
       unacknowledgedOnly: input?.unacknowledgedOnly,
-      startTime,
+      startTime: startTime2,
       limit: input?.limit
     });
   }),
@@ -4516,7 +4516,7 @@ var autoscalingRouter = router({
       };
     }
     try {
-      const startTime = Date.now();
+      const startTime2 = Date.now();
       if (rule.resourceType === "deployment") {
         await scaleDeployment(
           rule.resourcePattern,
@@ -4526,7 +4526,7 @@ var autoscalingRouter = router({
       } else if (rule.resourceType === "container") {
         console.log(`[AutoScaler] Would scale container ${rule.resourcePattern} to ${input.targetReplicas}`);
       }
-      const executionTime = Date.now() - startTime;
+      const executionTime = Date.now() - startTime2;
       await updateAutoscalingActionStatus(actionId, "completed");
       await updateRuleLastScaled(rule.id);
       return {
@@ -4711,7 +4711,7 @@ var scheduledScalingRouter = router({
     if (!schedule) {
       throw new Error("Schedule not found");
     }
-    const startTime = Date.now();
+    const startTime2 = Date.now();
     let previousReplicas = 0;
     let actualReplicas = 0;
     let errorMessage;
@@ -4736,7 +4736,7 @@ var scheduledScalingRouter = router({
       status = "failed";
       errorMessage = error instanceof Error ? error.message : "Unknown error";
     }
-    const executionTimeMs = Date.now() - startTime;
+    const executionTimeMs = Date.now() - startTime2;
     await recordScheduledScalingExecution({
       scheduleId: input.id,
       previousReplicas,
@@ -6870,6 +6870,85 @@ var clustersRouter = router({
   })
 });
 
+// server/routers/health.ts
+import { sql } from "drizzle-orm";
+var startTime = Date.now();
+var healthRouter = router({
+  // Basic health check (for load balancers)
+  check: publicProcedure.query(async () => {
+    return { status: "ok" };
+  }),
+  // Detailed health check
+  detailed: publicProcedure.query(async () => {
+    const checks = {
+      database: { status: "down" },
+      memory: { status: "ok", used: 0, total: 0, percentage: 0 }
+    };
+    try {
+      const dbStart = Date.now();
+      const db = await getDb();
+      if (db) {
+        await db.select({ count: sql`1` }).from(users).limit(1);
+        const dbLatency = Date.now() - dbStart;
+        checks.database = {
+          status: "up",
+          latency: dbLatency
+        };
+      } else {
+        checks.database = {
+          status: "down",
+          error: "Database not configured"
+        };
+      }
+    } catch (error) {
+      checks.database = {
+        status: "down",
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+    const memUsage = process.memoryUsage();
+    const totalMem = memUsage.heapTotal;
+    const usedMem = memUsage.heapUsed;
+    const memPercentage = usedMem / totalMem * 100;
+    checks.memory = {
+      status: memPercentage > 90 ? "critical" : memPercentage > 70 ? "warning" : "ok",
+      used: Math.round(usedMem / 1024 / 1024),
+      total: Math.round(totalMem / 1024 / 1024),
+      percentage: Math.round(memPercentage)
+    };
+    let status = "healthy";
+    if (checks.database.status === "down") {
+      status = "unhealthy";
+    } else if (checks.memory.status === "critical") {
+      status = "degraded";
+    }
+    return {
+      status,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      uptime: Math.round((Date.now() - startTime) / 1e3),
+      version: process.env.npm_package_version || "1.0.0",
+      checks
+    };
+  }),
+  // Readiness check (for Kubernetes)
+  ready: publicProcedure.query(async () => {
+    try {
+      const db = await getDb();
+      if (db) {
+        await db.select({ count: sql`1` }).from(users).limit(1);
+        return { ready: true };
+      }
+      return { ready: false };
+    } catch {
+      return { ready: false };
+    }
+  }),
+  // Liveness check (for Kubernetes)
+  live: publicProcedure.query(() => {
+    return { live: true };
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -6888,7 +6967,8 @@ var appRouter = router({
   abTesting: abTestingRouter,
   email: emailRouter,
   prometheus: prometheusRouter,
-  clusters: clustersRouter
+  clusters: clustersRouter,
+  health: healthRouter
 });
 
 // server/_core/context.ts
