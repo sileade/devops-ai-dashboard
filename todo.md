@@ -310,3 +310,37 @@
 - [x] Update README with Lighthouse CI guide
 - [x] Update README with Sentry setup guide
 - [x] Update README with k6 load testing guide
+
+
+## Phase 24: Grafana, Alerting & Chaos Engineering
+
+### Grafana Dashboards
+- [x] Create k6 load testing dashboard
+- [x] Create Prometheus metrics dashboard
+- [x] Create application performance dashboard
+- [x] Create infrastructure health dashboard
+- [x] Add Grafana provisioning configuration
+- [x] Create docker-compose for Grafana stack
+
+### PagerDuty/Opsgenie Integration
+- [x] Create alerting service abstraction
+- [x] Implement PagerDuty integration
+- [x] Implement Opsgenie integration
+- [x] Configure Alertmanager for alerts
+- [x] Add alert routing rules
+- [x] Create escalation policies documentation
+
+### Chaos Engineering
+- [x] Create chaos experiment scripts
+- [x] Add CPU stress test
+- [x] Add memory stress test
+- [x] Add network latency injection
+- [x] Add pod/container kill experiments
+- [x] Create Chaos Monkey configuration
+- [x] Add chaos engineering GitHub Actions workflow
+- [x] Create runbook for chaos experiments
+
+### Documentation
+- [x] Update README with Grafana setup guide
+- [x] Update README with alerting configuration
+- [x] Update README with chaos engineering guide

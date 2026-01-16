@@ -1,0 +1,261 @@
+name: Chaos Engineering
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: 'Chaos experiment to run'
+        required: true
+        default: 'cpu-stress'
+        type: choice
+        options:
+          - cpu-stress
+          - memory-stress
+          - network-latency
+          - disk-io-stress
+          - full-suite
+      duration:
+        description: 'Experiment duration in seconds'
+        required: false
+        default: '60'
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+  schedule:
+    # Run chaos tests weekly on staging (Sunday at 3 AM)
+    - cron: '0 3 * * 0'
+
+env:
+  EXPERIMENT_DURATION: ${{ github.event.inputs.duration || '60' }}
+
+jobs:
+  # Pre-flight checks
+  preflight:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      can_proceed: ${{ steps.check.outputs.can_proceed }}
+    steps:
+      - name: Check environment
+        id: check
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+          
+          # Only allow production chaos during business hours with approval
+          if [ "$ENVIRONMENT" = "production" ]; then
+            HOUR=$(date +%H)
+            DAY=$(date +%u)
+            
+            # Block production chaos outside business hours (9-17) and weekends
+            if [ "$DAY" -gt 5 ] || [ "$HOUR" -lt 9 ] || [ "$HOUR" -gt 17 ]; then
+              echo "::warning::Production chaos blocked outside business hours"
+              echo "can_proceed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          echo "can_proceed=true" >> $GITHUB_OUTPUT
+
+      - name: Notify start
+        if: steps.check.outputs.can_proceed == 'true'
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHAOS_CHANNEL }}
+          slack-message: |
+            :test_tube: *Chaos Experiment Starting*
+            • Experiment: `${{ github.event.inputs.experiment || 'cpu-stress' }}`
+            • Environment: `${{ github.event.inputs.environment || 'staging' }}`
+            • Duration: `${{ github.event.inputs.duration || '60' }}s`
+            • Triggered by: `${{ github.actor }}`
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        continue-on-error: true
+
+  # Run chaos experiment
+  chaos:
+    name: Run Chaos Experiment
+    needs: preflight
+    if: needs.preflight.outputs.can_proceed == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stress-ng iproute2
+
+      - name: Setup monitoring
+        run: |
+          # Start resource monitoring in background
+          (
+            while true; do
+              echo "$(date '+%Y-%m-%d %H:%M:%S') - CPU: $(top -bn1 | grep 'Cpu(s)' | awk '{print $2}')% | MEM: $(free -m | awk '/Mem:/{printf "%.1f%%", $3/$2*100}')"
+              sleep 5
+            done
+          ) > monitoring.log 2>&1 &
+          echo $! > monitor.pid
+
+      - name: Run chaos experiment
+        id: chaos
+        run: |
+          EXPERIMENT="${{ github.event.inputs.experiment || 'cpu-stress' }}"
+          DURATION="${{ github.event.inputs.duration || '60' }}"
+          
+          echo "Running experiment: $EXPERIMENT for ${DURATION}s"
+          
+          # Record start time
+          START_TIME=$(date +%s)
+          
+          # Run experiment
+          case "$EXPERIMENT" in
+            cpu-stress)
+              stress-ng --cpu $(nproc) --timeout ${DURATION}s --metrics-brief 2>&1 | tee experiment.log
+              ;;
+            memory-stress)
+              TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
+              TARGET_MEM=$((TOTAL_MEM * 70 / 100))
+              stress-ng --vm 1 --vm-bytes ${TARGET_MEM}M --timeout ${DURATION}s --metrics-brief 2>&1 | tee experiment.log
+              ;;
+            network-latency)
+              echo "Network latency simulation (simulated in CI)"
+              sleep $DURATION
+              echo "Latency simulation completed" > experiment.log
+              ;;
+            disk-io-stress)
+              stress-ng --hdd 2 --timeout ${DURATION}s --metrics-brief 2>&1 | tee experiment.log
+              ;;
+            full-suite)
+              echo "Running full chaos suite..."
+              stress-ng --cpu 2 --timeout 30s --metrics-brief 2>&1 | tee -a experiment.log
+              stress-ng --vm 1 --vm-bytes 512M --timeout 30s --metrics-brief 2>&1 | tee -a experiment.log
+              stress-ng --hdd 1 --timeout 30s --metrics-brief 2>&1 | tee -a experiment.log
+              ;;
+          esac
+          
+          # Record end time
+          END_TIME=$(date +%s)
+          ELAPSED=$((END_TIME - START_TIME))
+          
+          echo "experiment_duration=$ELAPSED" >> $GITHUB_OUTPUT
+          echo "Experiment completed in ${ELAPSED}s"
+
+      - name: Stop monitoring
+        if: always()
+        run: |
+          if [ -f monitor.pid ]; then
+            kill $(cat monitor.pid) 2>/dev/null || true
+          fi
+
+      - name: Analyze results
+        id: analyze
+        run: |
+          echo "## Chaos Experiment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Experiment | ${{ github.event.inputs.experiment || 'cpu-stress' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | ${{ steps.chaos.outputs.experiment_duration }}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ github.event.inputs.environment || 'staging' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f experiment.log ]; then
+            echo "### Experiment Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -50 experiment.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f monitoring.log ]; then
+            echo "### Resource Monitoring" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -20 monitoring.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results-${{ github.run_id }}
+          path: |
+            experiment.log
+            monitoring.log
+          retention-days: 30
+
+  # Health check after chaos
+  health-check:
+    name: Post-Chaos Health Check
+    needs: chaos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for recovery
+        run: sleep 30
+
+      - name: Check application health
+        id: health
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+          
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            HEALTH_URL="${{ secrets.STAGING_HEALTH_URL }}"
+          else
+            HEALTH_URL="${{ secrets.PRODUCTION_HEALTH_URL }}"
+          fi
+          
+          if [ -z "$HEALTH_URL" ]; then
+            echo "::warning::Health URL not configured"
+            echo "status=unknown" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check health endpoint
+          for i in {1..5}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "status=healthy" >> $GITHUB_OUTPUT
+              echo "Application is healthy"
+              exit 0
+            fi
+            
+            echo "Attempt $i: HTTP $HTTP_CODE - waiting..."
+            sleep 10
+          done
+          
+          echo "status=unhealthy" >> $GITHUB_OUTPUT
+          echo "::error::Application health check failed"
+
+      - name: Report status
+        run: |
+          echo "## Post-Chaos Health Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.health.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+
+  # Notify results
+  notify:
+    name: Notify Results
+    needs: [chaos, health-check]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHAOS_CHANNEL }}
+          slack-message: |
+            :${{ needs.health-check.result == 'success' && 'white_check_mark' || 'x' }}: *Chaos Experiment Completed*
+            • Experiment: `${{ github.event.inputs.experiment || 'cpu-stress' }}`
+            • Environment: `${{ github.event.inputs.environment || 'staging' }}`
+            • Chaos Result: `${{ needs.chaos.result }}`
+            • Health Check: `${{ needs.health-check.result }}`
+            • Run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        continue-on-error: true

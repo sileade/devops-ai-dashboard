@@ -1,0 +1,181 @@
+# Alertmanager Configuration for DevOps AI Dashboard
+# 
+# This configuration supports multiple notification channels:
+# - PagerDuty for critical incidents
+# - Opsgenie for on-call management
+# - Slack for team notifications
+# - Discord for community alerts
+# - Email as fallback
+
+global:
+  # SMTP configuration for email alerts
+  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
+  smtp_from: '${SMTP_FROM}'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+  # PagerDuty integration
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+  # Opsgenie integration
+  opsgenie_api_url: 'https://api.opsgenie.com/'
+  opsgenie_api_key: '${OPSGENIE_API_KEY}'
+
+  # Slack integration
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Routing tree for alerts
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+  
+  # Group alerts by alertname and severity
+  group_by: ['alertname', 'severity', 'job']
+  
+  # Wait time before sending first notification
+  group_wait: 30s
+  
+  # Wait time before sending updated notification
+  group_interval: 5m
+  
+  # Repeat interval for ongoing alerts
+  repeat_interval: 4h
+
+  # Child routes for specific alert handling
+  routes:
+    # Critical alerts -> PagerDuty + Opsgenie
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+
+    # Warning alerts -> Slack + Discord
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 1m
+      repeat_interval: 4h
+
+    # Infrastructure alerts
+    - match_re:
+        alertname: ^(Container|Node|Disk).*
+      receiver: 'infrastructure-alerts'
+      group_by: ['alertname', 'instance']
+
+    # Application alerts
+    - match:
+        job: devops-dashboard
+      receiver: 'application-alerts'
+
+# Inhibition rules to suppress redundant alerts
+inhibit_rules:
+  # If critical alert is firing, suppress warning for same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'job']
+
+  # If application is down, suppress all other application alerts
+  - source_match:
+      alertname: 'ApplicationDown'
+    target_match_re:
+      alertname: ^(HighErrorRate|HighLatency|HighCPU|HighMemory).*
+    equal: ['job']
+
+# Receiver configurations
+receivers:
+  # Default receiver - Slack only
+  - name: 'default-receiver'
+    slack_configs:
+      - channel: '#devops-alerts'
+        send_resolved: true
+        title: '{{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: '{{ template "grafana.url" . }}'
+          - type: button
+            text: 'Silence Alert'
+            url: '{{ template "alertmanager.silence.url" . }}'
+
+  # Critical alerts - PagerDuty + Opsgenie + Slack
+  - name: 'critical-alerts'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        send_resolved: true
+        severity: critical
+        description: '{{ template "pagerduty.default.description" . }}'
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+          resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+          num_firing: '{{ .Alerts.Firing | len }}'
+          num_resolved: '{{ .Alerts.Resolved | len }}'
+
+    opsgenie_configs:
+      - api_key: '${OPSGENIE_API_KEY}'
+        send_resolved: true
+        message: '{{ template "opsgenie.default.message" . }}'
+        description: '{{ template "opsgenie.default.description" . }}'
+        priority: P1
+        tags: 'devops,critical,{{ .CommonLabels.job }}'
+        entity: '{{ .CommonLabels.alertname }}'
+
+    slack_configs:
+      - channel: '#devops-critical'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '🚨 CRITICAL: {{ .CommonLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  # Warning alerts - Slack + Discord
+  - name: 'warning-alerts'
+    slack_configs:
+      - channel: '#devops-warnings'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '⚠️ WARNING: {{ .CommonLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    discord_configs:
+      - webhook_url: '${DISCORD_WEBHOOK_URL}'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}⚠️ Alert Firing{{ else }}✅ Alert Resolved{{ end }}'
+        message: '{{ range .Alerts }}**{{ .Labels.alertname }}**: {{ .Annotations.summary }}{{ end }}'
+
+  # Infrastructure alerts
+  - name: 'infrastructure-alerts'
+    slack_configs:
+      - channel: '#devops-infrastructure'
+        send_resolved: true
+        title: '🖥️ Infrastructure: {{ .CommonLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    opsgenie_configs:
+      - api_key: '${OPSGENIE_API_KEY}'
+        send_resolved: true
+        message: 'Infrastructure Alert: {{ .CommonLabels.alertname }}'
+        priority: '{{ if eq .CommonLabels.severity "critical" }}P1{{ else }}P3{{ end }}'
+        tags: 'infrastructure,{{ .CommonLabels.severity }}'
+
+  # Application alerts
+  - name: 'application-alerts'
+    slack_configs:
+      - channel: '#devops-application'
+        send_resolved: true
+        title: '📱 Application: {{ .CommonLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    email_configs:
+      - to: '${ALERT_EMAIL}'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'

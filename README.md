@@ -370,6 +370,84 @@ k6 run -e BASE_URL=https://staging.example.com k6/load-test.js
 - Error rate < 1%
 - Checks pass rate > 95%
 
+### Grafana Monitoring Stack
+
+Comprehensive monitoring with Grafana, Prometheus, and InfluxDB.
+
+**Quick Start:**
+```bash
+# Start monitoring stack
+docker-compose -f docker-compose.monitoring.yml up -d
+
+# Access dashboards
+# Grafana: http://localhost:3001 (admin/admin)
+# Prometheus: http://localhost:9090
+# InfluxDB: http://localhost:8086
+```
+
+**Available Dashboards:**
+| Dashboard | Description |
+|-----------|-------------|
+| k6 Load Testing | VUs, response times, error rates from k6 tests |
+| Application Performance | CPU, memory, HTTP metrics, latency percentiles |
+| Infrastructure Health | Node metrics, container stats, disk usage |
+
+**Alerting Integration:**
+Configured alert routing to multiple channels:
+- **PagerDuty** — Critical incidents (P1)
+- **Opsgenie** — On-call management
+- **Slack** — Team notifications
+- **Discord** — Community alerts
+- **Email** — Fallback notifications
+
+**Environment Variables for Alerting:**
+```bash
+PAGERDUTY_ROUTING_KEY=your-routing-key
+OPSGENIE_API_KEY=your-api-key
+SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+### Chaos Engineering
+
+Test system resilience with chaos experiments.
+
+**Available Experiments:**
+```bash
+# CPU stress (80% load for 60 seconds)
+./chaos/experiments.sh cpu-stress 80 60
+
+# Memory stress (70% for 60 seconds)
+./chaos/experiments.sh memory-stress 70 60
+
+# Network latency (200ms on eth0)
+./chaos/experiments.sh network-latency eth0 200 60
+
+# Container kill
+./chaos/experiments.sh container-kill devops-dashboard
+
+# Full chaos suite
+./chaos/experiments.sh full-suite
+
+# Cleanup
+./chaos/experiments.sh cleanup
+```
+
+**Experiment Types:**
+| Type | Description | Use Case |
+|------|-------------|----------|
+| CPU Stress | High CPU utilization | Test auto-scaling triggers |
+| Memory Stress | Memory pressure | Test OOM handling |
+| Network Latency | Add artificial delay | Test timeout handling |
+| Packet Loss | Simulate unreliable network | Test retry logic |
+| Container Kill | Abrupt termination | Test recovery mechanisms |
+| Disk I/O Stress | Heavy disk operations | Test I/O bound scenarios |
+
+**GitHub Actions Workflow:**
+Chaos experiments can be triggered via GitHub Actions with configurable experiment type, duration, and target environment. Production chaos is restricted to business hours.
+
+See `docs/CHAOS-ENGINEERING.md` for detailed documentation.
+
 ## Code Quality
 
 The codebase follows best practices:
