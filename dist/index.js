@@ -4319,7 +4319,121 @@ function acknowledgeAlert2(alertId) {
   return false;
 }
 
+// server/services/realtimeNotifications.ts
+import { eq as eq2 } from "drizzle-orm";
+var activeConnections = /* @__PURE__ */ new Map();
+var notificationHistory = /* @__PURE__ */ new Map();
+var MAX_HISTORY_SIZE = 100;
+function isUserOnline(userId) {
+  const connections = activeConnections.get(userId);
+  return connections !== void 0 && connections.size > 0;
+}
+function getOnlineUsers() {
+  return Array.from(activeConnections.keys());
+}
+function createNotification(params) {
+  return {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    type: params.type,
+    priority: params.priority,
+    title: params.title,
+    message: params.message,
+    timestamp: Date.now(),
+    data: params.data,
+    actionUrl: params.actionUrl,
+    read: false,
+    userId: params.userId,
+    teamId: params.teamId
+  };
+}
+var notificationCallback = null;
+async function sendNotificationToUser(userId, notification) {
+  if (!notificationHistory.has(userId)) {
+    notificationHistory.set(userId, []);
+  }
+  const history = notificationHistory.get(userId);
+  history.unshift(notification);
+  if (history.length > MAX_HISTORY_SIZE) {
+    history.pop();
+  }
+  if (notificationCallback && isUserOnline(userId)) {
+    notificationCallback(userId, notification);
+    return true;
+  }
+  return false;
+}
+async function broadcastNotification(notification) {
+  let sentCount = 0;
+  for (const userId of getOnlineUsers()) {
+    const sent = await sendNotificationToUser(userId, {
+      ...notification,
+      userId
+    });
+    if (sent) sentCount++;
+  }
+  return sentCount;
+}
+function getUserNotifications(userId, options = {}) {
+  const history = notificationHistory.get(userId) || [];
+  let filtered = history;
+  if (options.unreadOnly) {
+    filtered = filtered.filter((n) => !n.read);
+  }
+  if (options.categories && options.categories.length > 0) {
+    filtered = filtered.filter((n) => options.categories.includes(n.type));
+  }
+  if (options.priorities && options.priorities.length > 0) {
+    filtered = filtered.filter((n) => options.priorities.includes(n.priority));
+  }
+  return filtered.slice(0, options.limit || 50);
+}
+function markNotificationAsRead(userId, notificationId) {
+  const history = notificationHistory.get(userId);
+  if (!history) return false;
+  const notification = history.find((n) => n.id === notificationId);
+  if (notification) {
+    notification.read = true;
+    return true;
+  }
+  return false;
+}
+function markAllNotificationsAsRead(userId) {
+  const history = notificationHistory.get(userId);
+  if (!history) return 0;
+  let count2 = 0;
+  for (const notification of history) {
+    if (!notification.read) {
+      notification.read = true;
+      count2++;
+    }
+  }
+  return count2;
+}
+function getUnreadCount(userId) {
+  const history = notificationHistory.get(userId) || [];
+  return history.filter((n) => !n.read).length;
+}
+function clearNotifications(userId) {
+  notificationHistory.delete(userId);
+}
+
 // server/routers/notifications.ts
+var notificationCategorySchema = z6.enum([
+  "security",
+  "deployment",
+  "scaling",
+  "error",
+  "team",
+  "system",
+  "audit"
+]);
+var notificationPrioritySchema = z6.enum([
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info"
+]);
 var notificationsRouter = router({
   // Get all active alerts
   getAlerts: publicProcedure.input(z6.object({
@@ -4352,14 +4466,14 @@ var notificationsRouter = router({
   // Acknowledge all alerts
   acknowledgeAll: publicProcedure.mutation(async () => {
     const alerts = getActiveAlerts();
-    let count = 0;
+    let count2 = 0;
     for (const alert of alerts) {
       if (!alert.acknowledged) {
         acknowledgeAlert2(alert.id);
-        count++;
+        count2++;
       }
     }
-    return { acknowledged: count };
+    return { acknowledged: count2 };
   }),
   // Get metrics history
   getMetricsHistory: publicProcedure.input(z6.object({
@@ -4389,6 +4503,93 @@ var notificationsRouter = router({
   })).mutation(async ({ input }) => {
     console.log("Notification settings updated:", input);
     return { success: true };
+  }),
+  // ============================================
+  // REAL-TIME NOTIFICATIONS
+  // ============================================
+  // Get user real-time notifications
+  listRealtime: protectedProcedure.input(
+    z6.object({
+      limit: z6.number().min(1).max(100).optional().default(50),
+      unreadOnly: z6.boolean().optional().default(false),
+      categories: z6.array(notificationCategorySchema).optional(),
+      priorities: z6.array(notificationPrioritySchema).optional()
+    })
+  ).query(async ({ ctx, input }) => {
+    const notifications2 = getUserNotifications(ctx.user.id, {
+      limit: input.limit,
+      unreadOnly: input.unreadOnly,
+      categories: input.categories,
+      priorities: input.priorities
+    });
+    return {
+      notifications: notifications2,
+      total: notifications2.length,
+      unreadCount: getUnreadCount(ctx.user.id)
+    };
+  }),
+  // Get unread count
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    return {
+      count: getUnreadCount(ctx.user.id)
+    };
+  }),
+  // Mark notification as read
+  markAsRead: protectedProcedure.input(z6.object({ notificationId: z6.string() })).mutation(async ({ ctx, input }) => {
+    const success = markNotificationAsRead(ctx.user.id, input.notificationId);
+    return { success };
+  }),
+  // Mark all notifications as read
+  markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
+    const count2 = markAllNotificationsAsRead(ctx.user.id);
+    return { markedCount: count2 };
+  }),
+  // Clear all notifications
+  clearAll: protectedProcedure.mutation(async ({ ctx }) => {
+    clearNotifications(ctx.user.id);
+    return { success: true };
+  }),
+  // Send test notification
+  sendTest: protectedProcedure.input(
+    z6.object({
+      type: notificationCategorySchema.optional().default("system"),
+      priority: notificationPrioritySchema.optional().default("info"),
+      title: z6.string().optional().default("Test Notification"),
+      message: z6.string().optional().default("This is a test notification")
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const notification = createNotification({
+      type: input.type,
+      priority: input.priority,
+      title: input.title,
+      message: input.message,
+      userId: ctx.user.id
+    });
+    await sendNotificationToUser(ctx.user.id, notification);
+    return { success: true, notification };
+  }),
+  // Admin: Broadcast notification
+  broadcast: protectedProcedure.input(
+    z6.object({
+      type: notificationCategorySchema,
+      priority: notificationPrioritySchema,
+      title: z6.string(),
+      message: z6.string(),
+      actionUrl: z6.string().optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    if (ctx.user.role !== "admin") {
+      throw new Error("Admin access required");
+    }
+    const notification = createNotification({
+      type: input.type,
+      priority: input.priority,
+      title: input.title,
+      message: input.message,
+      actionUrl: input.actionUrl
+    });
+    const sentCount = await broadcastNotification(notification);
+    return { success: true, deliveredCount: sentCount };
   })
 });
 
@@ -4516,8 +4717,8 @@ var alertHistoryRouter = router({
   }),
   // Get unacknowledged count
   getUnacknowledgedCount: publicProcedure.query(async () => {
-    const count = await getUnacknowledgedAlertCount();
-    return { count };
+    const count2 = await getUnacknowledgedAlertCount();
+    return { count: count2 };
   }),
   // Check threshold and create alert if needed
   checkAndAlert: publicProcedure.input(z7.object({
@@ -5492,7 +5693,7 @@ Provide a 2-3 sentence recommendation on which variant performed better and why.
 
 // server/routers/email.ts
 import { z as z11 } from "zod";
-import { eq as eq2, desc as desc2 } from "drizzle-orm";
+import { eq as eq3, desc as desc3 } from "drizzle-orm";
 
 // server/services/email.ts
 import nodemailer from "nodemailer";
@@ -5878,7 +6079,7 @@ var emailRouter = router({
         fromEmail: input.fromEmail,
         fromName: input.fromName || "DevOps AI Dashboard",
         isVerified: false
-      }).where(eq2(emailConfig.id, existing[0].id));
+      }).where(eq3(emailConfig.id, existing[0].id));
       return { success: true, id: existing[0].id };
     } else {
       const result = await db.insert(emailConfig).values({
@@ -5915,7 +6116,7 @@ var emailRouter = router({
     });
     const result = await testEmailConnection();
     if (result.success) {
-      await db.update(emailConfig).set({ isVerified: true, lastTestedAt: /* @__PURE__ */ new Date() }).where(eq2(emailConfig.id, config.id));
+      await db.update(emailConfig).set({ isVerified: true, lastTestedAt: /* @__PURE__ */ new Date() }).where(eq3(emailConfig.id, config.id));
     }
     return result;
   }),
@@ -5965,7 +6166,7 @@ var emailRouter = router({
   getSubscriptions: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(emailSubscriptions).orderBy(desc2(emailSubscriptions.createdAt));
+    return await db.select().from(emailSubscriptions).orderBy(desc3(emailSubscriptions.createdAt));
   }),
   // Add subscription
   addSubscription: publicProcedure.input(z11.object({
@@ -6014,14 +6215,14 @@ var emailRouter = router({
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
     const { id, ...updates } = input;
-    await db.update(emailSubscriptions).set(updates).where(eq2(emailSubscriptions.id, id));
+    await db.update(emailSubscriptions).set(updates).where(eq3(emailSubscriptions.id, id));
     return { success: true };
   }),
   // Delete subscription
   deleteSubscription: publicProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    await db.delete(emailSubscriptions).where(eq2(emailSubscriptions.id, input.id));
+    await db.delete(emailSubscriptions).where(eq3(emailSubscriptions.id, input.id));
     return { success: true };
   }),
   // Get email history
@@ -6031,7 +6232,7 @@ var emailRouter = router({
   })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(emailHistory).orderBy(desc2(emailHistory.createdAt)).limit(input.limit).offset(input.offset);
+    return await db.select().from(emailHistory).orderBy(desc3(emailHistory.createdAt)).limit(input.limit).offset(input.offset);
   }),
   // Send alert notification to all subscribers
   sendAlertNotification: publicProcedure.input(z11.object({
@@ -6044,7 +6245,7 @@ var emailRouter = router({
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const subscribers = await db.select().from(emailSubscriptions).where(eq3(emailSubscriptions.isActive, true));
     const filteredSubscribers = subscribers.filter((sub) => {
       if (input.type === "critical") return sub.criticalAlerts;
       if (input.type === "warning") return sub.warningAlerts;
@@ -6111,7 +6312,7 @@ var emailRouter = router({
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const subscribers = await db.select().from(emailSubscriptions).where(eq3(emailSubscriptions.isActive, true));
     const filteredSubscribers = subscribers.filter((sub) => sub.abTestResults);
     if (filteredSubscribers.length === 0) {
       return { success: true, sent: 0, message: "No subscribers for A/B test results" };
@@ -6160,7 +6361,7 @@ var emailRouter = router({
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const subscribers = await db.select().from(emailSubscriptions).where(eq3(emailSubscriptions.isActive, true));
     const filteredSubscribers = subscribers.filter((sub) => sub.scalingEvents);
     if (filteredSubscribers.length === 0) {
       return { success: true, sent: 0, message: "No subscribers for scaling events" };
@@ -6205,7 +6406,7 @@ var emailRouter = router({
 
 // server/routers/prometheus.ts
 import { z as z12 } from "zod";
-import { eq as eq3, desc as desc3 } from "drizzle-orm";
+import { eq as eq4, desc as desc4 } from "drizzle-orm";
 
 // server/services/prometheus.ts
 var prometheusConfig2 = null;
@@ -6501,7 +6702,7 @@ var prometheusRouter = router({
       isEnabled: true
     };
     if (existing.length > 0) {
-      await db.update(prometheusConfig).set(data).where(eq3(prometheusConfig.id, existing[0].id));
+      await db.update(prometheusConfig).set(data).where(eq4(prometheusConfig.id, existing[0].id));
       return { success: true, id: existing[0].id };
     } else {
       const result = await db.insert(prometheusConfig).values({
@@ -6527,9 +6728,9 @@ var prometheusRouter = router({
     });
     const result = await testPrometheusConnection();
     if (result.success) {
-      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "success" }).where(eq3(prometheusConfig.id, config.id));
+      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "success" }).where(eq4(prometheusConfig.id, config.id));
     } else {
-      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "failed" }).where(eq3(prometheusConfig.id, config.id));
+      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "failed" }).where(eq4(prometheusConfig.id, config.id));
     }
     return result;
   }),
@@ -6658,13 +6859,13 @@ var prometheusRouter = router({
   getSavedQueries: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(prometheusMetrics).orderBy(desc3(prometheusMetrics.createdAt));
+    return await db.select().from(prometheusMetrics).orderBy(desc4(prometheusMetrics.createdAt));
   }),
   // Delete saved metric query
   deleteMetricQuery: publicProcedure.input(z12.object({ id: z12.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    await db.delete(prometheusMetrics).where(eq3(prometheusMetrics.id, input.id));
+    await db.delete(prometheusMetrics).where(eq4(prometheusMetrics.id, input.id));
     return { success: true };
   }),
   // Get Grafana dashboards
@@ -6710,13 +6911,13 @@ var prometheusRouter = router({
   getSavedDashboards: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(grafanaDashboards).orderBy(desc3(grafanaDashboards.createdAt));
+    return await db.select().from(grafanaDashboards).orderBy(desc4(grafanaDashboards.createdAt));
   }),
   // Delete saved dashboard
   deleteDashboard: publicProcedure.input(z12.object({ id: z12.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    await db.delete(grafanaDashboards).where(eq3(grafanaDashboards.id, input.id));
+    await db.delete(grafanaDashboards).where(eq4(grafanaDashboards.id, input.id));
     return { success: true };
   }),
   // Get dashboard embed URL
@@ -6778,7 +6979,7 @@ var prometheusRouter = router({
 
 // server/routers/clusters.ts
 import { z as z13 } from "zod";
-import { eq as eq4, desc as desc4 } from "drizzle-orm";
+import { eq as eq5, desc as desc5 } from "drizzle-orm";
 async function testClusterConnection(cluster) {
   try {
     const headers = {
@@ -6944,13 +7145,13 @@ var clustersRouter = router({
   list: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(kubernetesClusters).orderBy(desc4(kubernetesClusters.createdAt));
+    return await db.select().from(kubernetesClusters).orderBy(desc5(kubernetesClusters.createdAt));
   }),
   // Get cluster by ID
   getById: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.id)).limit(1);
     return clusters[0] || null;
   }),
   // Add new cluster
@@ -7030,22 +7231,22 @@ var clustersRouter = router({
     if (updateData.isDefault) {
       await db.update(kubernetesClusters).set({ isDefault: false });
     }
-    await db.update(kubernetesClusters).set(updateData).where(eq4(kubernetesClusters.id, id));
+    await db.update(kubernetesClusters).set(updateData).where(eq5(kubernetesClusters.id, id));
     return { success: true };
   }),
   // Delete cluster
   delete: publicProcedure.input(z13.object({ id: z13.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    await db.delete(clusterNamespaces).where(eq4(clusterNamespaces.clusterId, input.id));
-    await db.delete(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id));
+    await db.delete(clusterNamespaces).where(eq5(clusterNamespaces.clusterId, input.id));
+    await db.delete(kubernetesClusters).where(eq5(kubernetesClusters.id, input.id));
     return { success: true };
   }),
   // Test cluster connection
   testConnection: publicProcedure.input(z13.object({ id: z13.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.id)).limit(1);
     if (clusters.length === 0) {
       return { success: false, error: "Cluster not found" };
     }
@@ -7062,14 +7263,14 @@ var clustersRouter = router({
       kubernetesVersion: result.version || cluster.kubernetesVersion,
       lastHealthCheck: /* @__PURE__ */ new Date(),
       healthStatus: result.success ? "healthy" : "unhealthy"
-    }).where(eq4(kubernetesClusters.id, input.id));
+    }).where(eq5(kubernetesClusters.id, input.id));
     return result;
   }),
   // Get cluster health
   getHealth: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.id)).limit(1);
     if (clusters.length === 0) return null;
     const cluster = clusters[0];
     return await getClusterHealth({
@@ -7082,7 +7283,7 @@ var clustersRouter = router({
   getMetrics: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.id)).limit(1);
     if (clusters.length === 0) return null;
     const cluster = clusters[0];
     return await getClusterMetrics2({
@@ -7095,7 +7296,7 @@ var clustersRouter = router({
   getAllHealth: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.isEnabled, true));
     const healthPromises = clusters.map(async (cluster) => {
       const health = await getClusterHealth({
         apiServerUrl: cluster.apiServerUrl,
@@ -7117,7 +7318,7 @@ var clustersRouter = router({
   listNamespaces: publicProcedure.input(z13.object({ clusterId: z13.number() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.clusterId)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.clusterId)).limit(1);
     if (clusters.length === 0) return [];
     const cluster = clusters[0];
     try {
@@ -7147,7 +7348,7 @@ var clustersRouter = router({
   syncNamespaces: publicProcedure.input(z13.object({ clusterId: z13.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.clusterId)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.id, input.clusterId)).limit(1);
     if (clusters.length === 0) {
       return { success: false, error: "Cluster not found" };
     }
@@ -7168,7 +7369,7 @@ var clustersRouter = router({
       }
       const data = await response.json();
       const namespaces = data.items || [];
-      await db.delete(clusterNamespaces).where(eq4(clusterNamespaces.clusterId, input.clusterId));
+      await db.delete(clusterNamespaces).where(eq5(clusterNamespaces.clusterId, input.clusterId));
       for (const ns of namespaces) {
         await db.insert(clusterNamespaces).values({
           clusterId: input.clusterId,
@@ -7188,7 +7389,7 @@ var clustersRouter = router({
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.isEnabled, true));
     const selectedClusters = clusters.filter((c) => input.clusterIds.includes(c.id));
     if (selectedClusters.length < 2) {
       return { success: false, error: "At least 2 valid clusters required" };
@@ -7221,7 +7422,7 @@ var clustersRouter = router({
   getComparisonHistory: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(clusterComparisons).orderBy(desc4(clusterComparisons.createdAt)).limit(20);
+    return await db.select().from(clusterComparisons).orderBy(desc5(clusterComparisons.createdAt)).limit(20);
   }),
   // Get pods across all clusters
   getAllPods: publicProcedure.input(z13.object({
@@ -7230,7 +7431,7 @@ var clustersRouter = router({
   })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.isEnabled, true));
     const allPods = [];
     for (const cluster of clusters) {
       try {
@@ -7275,7 +7476,7 @@ var clustersRouter = router({
   })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.isEnabled, true));
     const allDeployments = [];
     for (const cluster of clusters) {
       try {
@@ -7316,14 +7517,14 @@ var clustersRouter = router({
     const db = await getDb();
     if (!db) return { success: false, error: "Database not available" };
     await db.update(kubernetesClusters).set({ isDefault: false });
-    await db.update(kubernetesClusters).set({ isDefault: true }).where(eq4(kubernetesClusters.id, input.id));
+    await db.update(kubernetesClusters).set({ isDefault: true }).where(eq5(kubernetesClusters.id, input.id));
     return { success: true };
   }),
   // Get default cluster
   getDefault: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return null;
-    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isDefault, true)).limit(1);
+    const clusters = await db.select().from(kubernetesClusters).where(eq5(kubernetesClusters.isDefault, true)).limit(1);
     return clusters[0] || null;
   })
 });
@@ -7411,7 +7612,7 @@ var healthRouter = router({
 import { z as z14 } from "zod";
 
 // server/services/canary.ts
-import { eq as eq5, desc as desc5, and as and2 } from "drizzle-orm";
+import { eq as eq6, desc as desc6, and as and3 } from "drizzle-orm";
 async function createCanaryDeployment(userId, config) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -7458,7 +7659,7 @@ async function createCanaryDeployment(userId, config) {
   if (steps.length > 0) {
     await db.insert(canaryDeploymentSteps).values(steps);
   }
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, deploymentId));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, deploymentId));
   return deployment;
 }
 function generateDeploymentSteps(deploymentId, initialPercent, targetPercent, incrementPercent) {
@@ -7481,7 +7682,7 @@ function generateDeploymentSteps(deploymentId, initialPercent, targetPercent, in
 async function getCanaryDeployment(id) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment || null;
 }
 async function listCanaryDeployments(userId, status, limit = 50) {
@@ -7489,17 +7690,17 @@ async function listCanaryDeployments(userId, status, limit = 50) {
   if (!db) throw new Error("Database not available");
   let query = db.select().from(canaryDeployments);
   const conditions = [];
-  if (userId) conditions.push(eq5(canaryDeployments.userId, userId));
-  if (status) conditions.push(eq5(canaryDeployments.status, status));
+  if (userId) conditions.push(eq6(canaryDeployments.userId, userId));
+  if (status) conditions.push(eq6(canaryDeployments.status, status));
   if (conditions.length > 0) {
-    query = query.where(and2(...conditions));
+    query = query.where(and3(...conditions));
   }
-  return query.orderBy(desc5(canaryDeployments.createdAt)).limit(limit);
+  return query.orderBy(desc6(canaryDeployments.createdAt)).limit(limit);
 }
 async function getDeploymentSteps(deploymentId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(canaryDeploymentSteps).where(eq5(canaryDeploymentSteps.deploymentId, deploymentId)).orderBy(canaryDeploymentSteps.stepNumber);
+  return db.select().from(canaryDeploymentSteps).where(eq6(canaryDeploymentSteps.deploymentId, deploymentId)).orderBy(canaryDeploymentSteps.stepNumber);
 }
 async function startCanaryDeployment(id) {
   const db = await getDb();
@@ -7507,15 +7708,15 @@ async function startCanaryDeployment(id) {
   await db.update(canaryDeployments).set({
     status: "initializing",
     startedAt: /* @__PURE__ */ new Date()
-  }).where(eq5(canaryDeployments.id, id));
+  }).where(eq6(canaryDeployments.id, id));
   const steps = await getDeploymentSteps(id);
   if (steps.length > 0) {
     await db.update(canaryDeploymentSteps).set({
       status: "running",
       startedAt: /* @__PURE__ */ new Date()
-    }).where(eq5(canaryDeploymentSteps.id, steps[0].id));
+    }).where(eq6(canaryDeploymentSteps.id, steps[0].id));
   }
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment;
 }
 async function progressCanaryDeployment(id) {
@@ -7529,7 +7730,7 @@ async function progressCanaryDeployment(id) {
   await recordCanaryMetrics(id, analysis);
   if (analysis.shouldRollback) {
     await initiateRollback(id, analysis.reasons[0] || "Health check failed", "auto_health_check");
-    const [updated2] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+    const [updated2] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
     return { deployment: updated2, analysis };
   }
   if (analysis.shouldPromote) {
@@ -7539,24 +7740,24 @@ async function progressCanaryDeployment(id) {
       await db.update(canaryDeploymentSteps).set({
         status: "completed",
         completedAt: /* @__PURE__ */ new Date()
-      }).where(eq5(canaryDeploymentSteps.id, currentStep.id));
+      }).where(eq6(canaryDeploymentSteps.id, currentStep.id));
       const nextStep = steps.find((s) => s.stepNumber === currentStep.stepNumber + 1);
       if (nextStep) {
         await db.update(canaryDeploymentSteps).set({
           status: "running",
           startedAt: /* @__PURE__ */ new Date()
-        }).where(eq5(canaryDeploymentSteps.id, nextStep.id));
+        }).where(eq6(canaryDeploymentSteps.id, nextStep.id));
         await db.update(canaryDeployments).set({
           status: "progressing",
           currentCanaryPercent: nextStep.targetPercent,
           lastProgressAt: /* @__PURE__ */ new Date()
-        }).where(eq5(canaryDeployments.id, id));
+        }).where(eq6(canaryDeployments.id, id));
       } else {
         await promoteCanaryToStable(id);
       }
     }
   }
-  const [updated] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  const [updated] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return { deployment: updated, analysis };
 }
 async function promoteCanaryToStable(id) {
@@ -7567,8 +7768,8 @@ async function promoteCanaryToStable(id) {
     currentCanaryPercent: 100,
     completedAt: /* @__PURE__ */ new Date(),
     statusMessage: "Canary successfully promoted to stable"
-  }).where(eq5(canaryDeployments.id, id));
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  }).where(eq6(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment;
 }
 async function pauseCanaryDeployment(id) {
@@ -7577,8 +7778,8 @@ async function pauseCanaryDeployment(id) {
   await db.update(canaryDeployments).set({
     status: "paused",
     statusMessage: "Deployment paused by user"
-  }).where(eq5(canaryDeployments.id, id));
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  }).where(eq6(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment;
 }
 async function resumeCanaryDeployment(id) {
@@ -7587,8 +7788,8 @@ async function resumeCanaryDeployment(id) {
   await db.update(canaryDeployments).set({
     status: "progressing",
     statusMessage: "Deployment resumed"
-  }).where(eq5(canaryDeployments.id, id));
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  }).where(eq6(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment;
 }
 async function cancelCanaryDeployment(id) {
@@ -7598,14 +7799,14 @@ async function cancelCanaryDeployment(id) {
     status: "cancelled",
     completedAt: /* @__PURE__ */ new Date(),
     statusMessage: "Deployment cancelled by user"
-  }).where(eq5(canaryDeployments.id, id));
+  }).where(eq6(canaryDeployments.id, id));
   await db.update(canaryDeploymentSteps).set({ status: "skipped" }).where(
-    and2(
-      eq5(canaryDeploymentSteps.deploymentId, id),
-      eq5(canaryDeploymentSteps.status, "pending")
+    and3(
+      eq6(canaryDeploymentSteps.deploymentId, id),
+      eq6(canaryDeploymentSteps.status, "pending")
     )
   );
-  const [deployment] = await db.select().from(canaryDeployments).where(eq5(canaryDeployments.id, id));
+  const [deployment] = await db.select().from(canaryDeployments).where(eq6(canaryDeployments.id, id));
   return deployment;
 }
 async function initiateRollback(deploymentId, reason, trigger, initiatedBy) {
@@ -7632,17 +7833,17 @@ async function initiateRollback(deploymentId, reason, trigger, initiatedBy) {
   await db.update(canaryDeployments).set({
     status: "rolling_back",
     statusMessage: `Rolling back: ${reason}`
-  }).where(eq5(canaryDeployments.id, deploymentId));
+  }).where(eq6(canaryDeployments.id, deploymentId));
   if (currentStep) {
-    await db.update(canaryDeploymentSteps).set({ status: "failed" }).where(eq5(canaryDeploymentSteps.id, currentStep.id));
+    await db.update(canaryDeploymentSteps).set({ status: "failed" }).where(eq6(canaryDeploymentSteps.id, currentStep.id));
   }
-  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, result.insertId));
+  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq6(canaryRollbackHistory.id, result.insertId));
   return rollback;
 }
 async function completeRollback(rollbackId, success, errorMessage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, rollbackId));
+  const [rollback] = await db.select().from(canaryRollbackHistory).where(eq6(canaryRollbackHistory.id, rollbackId));
   if (!rollback) {
     throw new Error("Rollback record not found");
   }
@@ -7650,20 +7851,20 @@ async function completeRollback(rollbackId, success, errorMessage) {
     status: success ? "completed" : "failed",
     completedAt: /* @__PURE__ */ new Date(),
     errorMessage
-  }).where(eq5(canaryRollbackHistory.id, rollbackId));
+  }).where(eq6(canaryRollbackHistory.id, rollbackId));
   await db.update(canaryDeployments).set({
     status: success ? "rolled_back" : "failed",
     currentCanaryPercent: 0,
     completedAt: /* @__PURE__ */ new Date(),
     statusMessage: success ? "Successfully rolled back to stable version" : `Rollback failed: ${errorMessage}`
-  }).where(eq5(canaryDeployments.id, rollback.deploymentId));
-  const [updated] = await db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.id, rollbackId));
+  }).where(eq6(canaryDeployments.id, rollback.deploymentId));
+  const [updated] = await db.select().from(canaryRollbackHistory).where(eq6(canaryRollbackHistory.id, rollbackId));
   return updated;
 }
 async function getRollbackHistory(deploymentId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(canaryRollbackHistory).where(eq5(canaryRollbackHistory.deploymentId, deploymentId)).orderBy(desc5(canaryRollbackHistory.createdAt));
+  return db.select().from(canaryRollbackHistory).where(eq6(canaryRollbackHistory.deploymentId, deploymentId)).orderBy(desc6(canaryRollbackHistory.createdAt));
 }
 async function recordCanaryMetrics(deploymentId, analysis, stepId) {
   const db = await getDb();
@@ -7694,13 +7895,13 @@ async function recordCanaryMetrics(deploymentId, analysis, stepId) {
     analysisNotes: analysis.reasons.join("; ")
   };
   const [result] = await db.insert(canaryMetrics).values(metricData);
-  const [metric] = await db.select().from(canaryMetrics).where(eq5(canaryMetrics.id, result.insertId));
+  const [metric] = await db.select().from(canaryMetrics).where(eq6(canaryMetrics.id, result.insertId));
   return metric;
 }
 async function getCanaryMetrics(deploymentId, limit = 100) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(canaryMetrics).where(eq5(canaryMetrics.deploymentId, deploymentId)).orderBy(desc5(canaryMetrics.timestamp)).limit(limit);
+  return db.select().from(canaryMetrics).where(eq6(canaryMetrics.deploymentId, deploymentId)).orderBy(desc6(canaryMetrics.timestamp)).limit(limit);
 }
 async function analyzeCanaryHealth(deploymentId) {
   const deployment = await getCanaryDeployment(deploymentId);
@@ -7814,24 +8015,24 @@ async function createCanaryTemplate(userId, template) {
     ...template,
     userId
   });
-  const [created] = await db.select().from(canaryTemplates).where(eq5(canaryTemplates.id, result.insertId));
+  const [created] = await db.select().from(canaryTemplates).where(eq6(canaryTemplates.id, result.insertId));
   return created;
 }
 async function listCanaryTemplates(userId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.select().from(canaryTemplates).where(eq5(canaryTemplates.userId, userId)).orderBy(desc5(canaryTemplates.createdAt));
+  return db.select().from(canaryTemplates).where(eq6(canaryTemplates.userId, userId)).orderBy(desc6(canaryTemplates.createdAt));
 }
 async function getCanaryTemplate(id) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [template] = await db.select().from(canaryTemplates).where(eq5(canaryTemplates.id, id));
+  const [template] = await db.select().from(canaryTemplates).where(eq6(canaryTemplates.id, id));
   return template || null;
 }
 async function deleteCanaryTemplate(id) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(canaryTemplates).where(eq5(canaryTemplates.id, id));
+  await db.delete(canaryTemplates).where(eq6(canaryTemplates.id, id));
 }
 
 // server/routers/canary.ts
@@ -10124,13 +10325,13 @@ var blueGreenRouter = router({
 import { z as z18 } from "zod";
 
 // server/services/teams.ts
-import { eq as eq6, and as and3, desc as desc6, sql as sql2, inArray } from "drizzle-orm";
+import { eq as eq7, and as and4, desc as desc7, sql as sql2, inArray as inArray2 } from "drizzle-orm";
 import { randomBytes } from "crypto";
 async function createTeam(data) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const existing = await db.select().from(teams).where(eq6(teams.slug, slug)).limit(1);
+  const existing = await db.select().from(teams).where(eq7(teams.slug, slug)).limit(1);
   if (existing.length > 0) {
     throw new Error("Team slug already exists");
   }
@@ -10167,13 +10368,13 @@ async function createTeam(data) {
 async function getTeam(teamId) {
   const db = await getDb();
   if (!db) return null;
-  const [team] = await db.select().from(teams).where(eq6(teams.id, teamId)).limit(1);
+  const [team] = await db.select().from(teams).where(eq7(teams.id, teamId)).limit(1);
   return team || null;
 }
 async function getTeamBySlug(slug) {
   const db = await getDb();
   if (!db) return null;
-  const [team] = await db.select().from(teams).where(eq6(teams.slug, slug)).limit(1);
+  const [team] = await db.select().from(teams).where(eq7(teams.slug, slug)).limit(1);
   return team || null;
 }
 async function getUserTeams(userId) {
@@ -10182,7 +10383,7 @@ async function getUserTeams(userId) {
   const memberships = await db.select({
     team: teams,
     membership: teamMembers
-  }).from(teamMembers).innerJoin(teams, eq6(teamMembers.teamId, teams.id)).where(and3(eq6(teamMembers.userId, userId), eq6(teamMembers.status, "active"))).orderBy(desc6(teams.createdAt));
+  }).from(teamMembers).innerJoin(teams, eq7(teamMembers.teamId, teams.id)).where(and4(eq7(teamMembers.userId, userId), eq7(teamMembers.status, "active"))).orderBy(desc7(teams.createdAt));
   return memberships.map((m) => ({
     ...m.team,
     role: m.membership.role,
@@ -10192,34 +10393,34 @@ async function getUserTeams(userId) {
 async function updateTeam(teamId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(teams).set(data).where(eq6(teams.id, teamId));
+  await db.update(teams).set(data).where(eq7(teams.id, teamId));
   return getTeam(teamId);
 }
 async function deleteTeam(teamId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(teamMembers).where(eq6(teamMembers.teamId, teamId));
-  await db.delete(teamInvitations).where(eq6(teamInvitations.teamId, teamId));
-  await db.delete(teamResources).where(eq6(teamResources.teamId, teamId));
-  await db.delete(teamActivity).where(eq6(teamActivity.teamId, teamId));
-  await db.delete(teams).where(eq6(teams.id, teamId));
+  await db.delete(teamMembers).where(eq7(teamMembers.teamId, teamId));
+  await db.delete(teamInvitations).where(eq7(teamInvitations.teamId, teamId));
+  await db.delete(teamResources).where(eq7(teamResources.teamId, teamId));
+  await db.delete(teamActivity).where(eq7(teamActivity.teamId, teamId));
+  await db.delete(teams).where(eq7(teams.id, teamId));
 }
 async function getTeamMembers(teamId) {
   const db = await getDb();
   if (!db) return [];
-  const members = await db.select().from(teamMembers).where(eq6(teamMembers.teamId, teamId)).orderBy(desc6(teamMembers.createdAt));
+  const members = await db.select().from(teamMembers).where(eq7(teamMembers.teamId, teamId)).orderBy(desc7(teamMembers.createdAt));
   return members;
 }
 async function addTeamMember(data) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const existing = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, data.teamId), eq6(teamMembers.userId, data.userId))).limit(1);
+  const existing = await db.select().from(teamMembers).where(and4(eq7(teamMembers.teamId, data.teamId), eq7(teamMembers.userId, data.userId))).limit(1);
   if (existing.length > 0) {
     throw new Error("User is already a team member");
   }
   const team = await getTeam(data.teamId);
   if (team) {
-    const memberCount = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(eq6(teamMembers.teamId, data.teamId));
+    const memberCount = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(eq7(teamMembers.teamId, data.teamId));
     if (memberCount[0].count >= (team.maxMembers || 10)) {
       throw new Error("Team member limit reached");
     }
@@ -10245,14 +10446,14 @@ async function addTeamMember(data) {
 async function updateTeamMemberRole(teamId, userId, newRole) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [current] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  const [current] = await db.select().from(teamMembers).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.userId, userId))).limit(1);
   if (!current) {
     throw new Error("Member not found");
   }
   if (current.role === "owner") {
     throw new Error("Cannot change owner role");
   }
-  await db.update(teamMembers).set({ role: newRole }).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId)));
+  await db.update(teamMembers).set({ role: newRole }).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.userId, userId)));
   await logTeamActivity({
     teamId,
     userId,
@@ -10264,11 +10465,11 @@ async function updateTeamMemberRole(teamId, userId, newRole) {
 async function removeTeamMember(teamId, userId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [member] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  const [member] = await db.select().from(teamMembers).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.userId, userId))).limit(1);
   if (member?.role === "owner") {
     throw new Error("Cannot remove team owner");
   }
-  await db.delete(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId)));
+  await db.delete(teamMembers).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.userId, userId)));
   await logTeamActivity({
     teamId,
     userId,
@@ -10279,17 +10480,17 @@ async function removeTeamMember(teamId, userId) {
 async function getUserTeamRole(teamId, userId) {
   const db = await getDb();
   if (!db) return null;
-  const [member] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  const [member] = await db.select().from(teamMembers).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.userId, userId))).limit(1);
   return member?.role || null;
 }
 async function createTeamInvitation(data) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const existing = await db.select().from(teamInvitations).where(
-    and3(
-      eq6(teamInvitations.teamId, data.teamId),
-      eq6(teamInvitations.email, data.email),
-      eq6(teamInvitations.status, "pending")
+    and4(
+      eq7(teamInvitations.teamId, data.teamId),
+      eq7(teamInvitations.email, data.email),
+      eq7(teamInvitations.status, "pending")
     )
   ).limit(1);
   if (existing.length > 0) {
@@ -10312,12 +10513,12 @@ async function createTeamInvitation(data) {
 async function getTeamInvitations(teamId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(teamInvitations).where(eq6(teamInvitations.teamId, teamId)).orderBy(desc6(teamInvitations.createdAt));
+  return db.select().from(teamInvitations).where(eq7(teamInvitations.teamId, teamId)).orderBy(desc7(teamInvitations.createdAt));
 }
 async function acceptInvitation(token, userId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [invitation] = await db.select().from(teamInvitations).where(eq6(teamInvitations.token, token)).limit(1);
+  const [invitation] = await db.select().from(teamInvitations).where(eq7(teamInvitations.token, token)).limit(1);
   if (!invitation) {
     throw new Error("Invitation not found");
   }
@@ -10325,7 +10526,7 @@ async function acceptInvitation(token, userId) {
     throw new Error("Invitation is no longer valid");
   }
   if (/* @__PURE__ */ new Date() > invitation.expiresAt) {
-    await db.update(teamInvitations).set({ status: "expired" }).where(eq6(teamInvitations.id, invitation.id));
+    await db.update(teamInvitations).set({ status: "expired" }).where(eq7(teamInvitations.id, invitation.id));
     throw new Error("Invitation has expired");
   }
   await addTeamMember({
@@ -10334,18 +10535,18 @@ async function acceptInvitation(token, userId) {
     role: invitation.role,
     invitedBy: invitation.invitedBy
   });
-  await db.update(teamInvitations).set({ status: "accepted", respondedAt: /* @__PURE__ */ new Date() }).where(eq6(teamInvitations.id, invitation.id));
+  await db.update(teamInvitations).set({ status: "accepted", respondedAt: /* @__PURE__ */ new Date() }).where(eq7(teamInvitations.id, invitation.id));
   return invitation;
 }
 async function declineInvitation(token) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(teamInvitations).set({ status: "declined", respondedAt: /* @__PURE__ */ new Date() }).where(eq6(teamInvitations.token, token));
+  await db.update(teamInvitations).set({ status: "declined", respondedAt: /* @__PURE__ */ new Date() }).where(eq7(teamInvitations.token, token));
 }
 async function cancelInvitation(invitationId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(teamInvitations).set({ status: "cancelled" }).where(eq6(teamInvitations.id, invitationId));
+  await db.update(teamInvitations).set({ status: "cancelled" }).where(eq7(teamInvitations.id, invitationId));
 }
 async function addTeamResource(data) {
   const db = await getDb();
@@ -10370,25 +10571,25 @@ async function addTeamResource(data) {
 async function getTeamResources(teamId, resourceType) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(teamResources).where(eq6(teamResources.teamId, teamId));
+  let query = db.select().from(teamResources).where(eq7(teamResources.teamId, teamId));
   if (resourceType) {
     query = db.select().from(teamResources).where(
-      and3(
-        eq6(teamResources.teamId, teamId),
-        eq6(teamResources.resourceType, resourceType)
+      and4(
+        eq7(teamResources.teamId, teamId),
+        eq7(teamResources.resourceType, resourceType)
       )
     );
   }
-  return query.orderBy(desc6(teamResources.createdAt));
+  return query.orderBy(desc7(teamResources.createdAt));
 }
 async function removeTeamResource(teamId, resourceType, resourceId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(teamResources).where(
-    and3(
-      eq6(teamResources.teamId, teamId),
-      eq6(teamResources.resourceType, resourceType),
-      eq6(teamResources.resourceId, resourceId)
+    and4(
+      eq7(teamResources.teamId, teamId),
+      eq7(teamResources.resourceType, resourceType),
+      eq7(teamResources.resourceId, resourceId)
     )
   );
 }
@@ -10401,10 +10602,10 @@ async function checkResourceAccess(userId, resourceType, resourceId) {
     return { hasAccess: false, accessLevel: null, teamId: null };
   }
   const [resource] = await db.select().from(teamResources).where(
-    and3(
-      inArray(teamResources.teamId, teamIds),
-      eq6(teamResources.resourceType, resourceType),
-      eq6(teamResources.resourceId, resourceId)
+    and4(
+      inArray2(teamResources.teamId, teamIds),
+      eq7(teamResources.resourceType, resourceType),
+      eq7(teamResources.resourceId, resourceId)
     )
   ).limit(1);
   if (!resource) {
@@ -10430,14 +10631,14 @@ async function logTeamActivity(data) {
 async function getTeamActivity(teamId, limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(teamActivity).where(eq6(teamActivity.teamId, teamId)).orderBy(desc6(teamActivity.createdAt)).limit(limit);
+  return db.select().from(teamActivity).where(eq7(teamActivity.teamId, teamId)).orderBy(desc7(teamActivity.createdAt)).limit(limit);
 }
 async function getTeamStats(teamId) {
   const db = await getDb();
   if (!db) return null;
-  const [memberCount] = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.status, "active")));
-  const [resourceCount] = await db.select({ count: sql2`count(*)` }).from(teamResources).where(eq6(teamResources.teamId, teamId));
-  const [pendingInvitations] = await db.select({ count: sql2`count(*)` }).from(teamInvitations).where(and3(eq6(teamInvitations.teamId, teamId), eq6(teamInvitations.status, "pending")));
+  const [memberCount] = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(and4(eq7(teamMembers.teamId, teamId), eq7(teamMembers.status, "active")));
+  const [resourceCount] = await db.select({ count: sql2`count(*)` }).from(teamResources).where(eq7(teamResources.teamId, teamId));
+  const [pendingInvitations] = await db.select({ count: sql2`count(*)` }).from(teamInvitations).where(and4(eq7(teamInvitations.teamId, teamId), eq7(teamInvitations.status, "pending")));
   const recentActivity = await getTeamActivity(teamId, 10);
   return {
     memberCount: memberCount.count,
@@ -10493,7 +10694,7 @@ Provide:
 }
 
 // server/services/auditLog.ts
-import { eq as eq7, and as and4, desc as desc7, sql as sql3, or as or2, like as like3, gte as gte3, lte as lte3, inArray as inArray2 } from "drizzle-orm";
+import { eq as eq8, and as and5, desc as desc8, sql as sql3, or as or2, like as like3, gte as gte4, lte as lte3, inArray as inArray3 } from "drizzle-orm";
 function determineRiskLevel(action, data) {
   const criticalActions = ["admin_action", "system_config_change", "secret_update"];
   const highRiskActions = ["delete", "deploy", "rollback", "team_delete", "member_remove"];
@@ -10561,39 +10762,39 @@ async function getAuditLogs(filters = {}, pagination = { page: 1, limit: 50 }) {
   if (!db) return { logs: [], total: 0 };
   const conditions = [];
   if (filters.userId) {
-    conditions.push(eq7(auditLogs.userId, filters.userId));
+    conditions.push(eq8(auditLogs.userId, filters.userId));
   }
   if (filters.teamId) {
-    conditions.push(eq7(auditLogs.teamId, filters.teamId));
+    conditions.push(eq8(auditLogs.teamId, filters.teamId));
   }
   if (filters.action) {
     if (Array.isArray(filters.action)) {
-      conditions.push(inArray2(auditLogs.action, filters.action));
+      conditions.push(inArray3(auditLogs.action, filters.action));
     } else {
-      conditions.push(eq7(auditLogs.action, filters.action));
+      conditions.push(eq8(auditLogs.action, filters.action));
     }
   }
   if (filters.resourceType) {
-    conditions.push(eq7(auditLogs.resourceType, filters.resourceType));
+    conditions.push(eq8(auditLogs.resourceType, filters.resourceType));
   }
   if (filters.resourceId) {
-    conditions.push(eq7(auditLogs.resourceId, filters.resourceId));
+    conditions.push(eq8(auditLogs.resourceId, filters.resourceId));
   }
   if (filters.status) {
-    conditions.push(eq7(auditLogs.status, filters.status));
+    conditions.push(eq8(auditLogs.status, filters.status));
   }
   if (filters.riskLevel) {
     if (Array.isArray(filters.riskLevel)) {
-      conditions.push(inArray2(auditLogs.riskLevel, filters.riskLevel));
+      conditions.push(inArray3(auditLogs.riskLevel, filters.riskLevel));
     } else {
-      conditions.push(eq7(auditLogs.riskLevel, filters.riskLevel));
+      conditions.push(eq8(auditLogs.riskLevel, filters.riskLevel));
     }
   }
   if (filters.isSuspicious !== void 0) {
-    conditions.push(eq7(auditLogs.isSuspicious, filters.isSuspicious));
+    conditions.push(eq8(auditLogs.isSuspicious, filters.isSuspicious));
   }
   if (filters.startDate) {
-    conditions.push(gte3(auditLogs.createdAt, filters.startDate));
+    conditions.push(gte4(auditLogs.createdAt, filters.startDate));
   }
   if (filters.endDate) {
     conditions.push(lte3(auditLogs.createdAt, filters.endDate));
@@ -10607,10 +10808,10 @@ async function getAuditLogs(filters = {}, pagination = { page: 1, limit: 50 }) {
       )
     );
   }
-  const whereClause = conditions.length > 0 ? and4(...conditions) : void 0;
+  const whereClause = conditions.length > 0 ? and5(...conditions) : void 0;
   const [countResult] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(whereClause);
   const offset = (pagination.page - 1) * pagination.limit;
-  const logs = await db.select().from(auditLogs).where(whereClause).orderBy(desc7(auditLogs.createdAt)).limit(pagination.limit).offset(offset);
+  const logs = await db.select().from(auditLogs).where(whereClause).orderBy(desc8(auditLogs.createdAt)).limit(pagination.limit).offset(offset);
   return {
     logs,
     total: countResult.count,
@@ -10622,7 +10823,7 @@ async function getAuditLogs(filters = {}, pagination = { page: 1, limit: 50 }) {
 async function getAuditLogById(id) {
   const db = await getDb();
   if (!db) return null;
-  const [log] = await db.select().from(auditLogs).where(eq7(auditLogs.id, id)).limit(1);
+  const [log] = await db.select().from(auditLogs).where(eq8(auditLogs.id, id)).limit(1);
   return log || null;
 }
 async function getAuditLogStats(teamId, days = 30) {
@@ -10630,30 +10831,30 @@ async function getAuditLogStats(teamId, days = 30) {
   if (!db) return null;
   const startDate = /* @__PURE__ */ new Date();
   startDate.setDate(startDate.getDate() - days);
-  const conditions = [gte3(auditLogs.createdAt, startDate)];
+  const conditions = [gte4(auditLogs.createdAt, startDate)];
   if (teamId) {
-    conditions.push(eq7(auditLogs.teamId, teamId));
+    conditions.push(eq8(auditLogs.teamId, teamId));
   }
-  const [totalEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions));
+  const [totalEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and5(...conditions));
   const eventsByAction = await db.select({
     action: auditLogs.action,
     count: sql3`count(*)`
-  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.action).orderBy(desc7(sql3`count(*)`));
+  }).from(auditLogs).where(and5(...conditions)).groupBy(auditLogs.action).orderBy(desc8(sql3`count(*)`));
   const eventsByRisk = await db.select({
     riskLevel: auditLogs.riskLevel,
     count: sql3`count(*)`
-  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.riskLevel);
-  const [suspiciousEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions, eq7(auditLogs.isSuspicious, true)));
-  const [failedEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions, eq7(auditLogs.status, "failure")));
+  }).from(auditLogs).where(and5(...conditions)).groupBy(auditLogs.riskLevel);
+  const [suspiciousEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and5(...conditions, eq8(auditLogs.isSuspicious, true)));
+  const [failedEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and5(...conditions, eq8(auditLogs.status, "failure")));
   const activeUsers = await db.select({
     userId: auditLogs.userId,
     userEmail: auditLogs.userEmail,
     count: sql3`count(*)`
-  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.userId, auditLogs.userEmail).orderBy(desc7(sql3`count(*)`)).limit(10);
+  }).from(auditLogs).where(and5(...conditions)).groupBy(auditLogs.userId, auditLogs.userEmail).orderBy(desc8(sql3`count(*)`)).limit(10);
   const eventsByDay = await db.select({
     date: sql3`DATE(createdAt)`,
     count: sql3`count(*)`
-  }).from(auditLogs).where(and4(...conditions)).groupBy(sql3`DATE(createdAt)`).orderBy(sql3`DATE(createdAt)`);
+  }).from(auditLogs).where(and5(...conditions)).groupBy(sql3`DATE(createdAt)`).orderBy(sql3`DATE(createdAt)`);
   return {
     totalEvents: totalEvents.count,
     eventsByAction,
@@ -10685,9 +10886,9 @@ async function getAuditLogPolicies(teamId) {
   const db = await getDb();
   if (!db) return [];
   if (teamId) {
-    return db.select().from(auditLogPolicies).where(or2(eq7(auditLogPolicies.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc7(auditLogPolicies.createdAt));
+    return db.select().from(auditLogPolicies).where(or2(eq8(auditLogPolicies.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc8(auditLogPolicies.createdAt));
   }
-  return db.select().from(auditLogPolicies).orderBy(desc7(auditLogPolicies.createdAt));
+  return db.select().from(auditLogPolicies).orderBy(desc8(auditLogPolicies.createdAt));
 }
 async function createAuditLogAlert(data) {
   const db = await getDb();
@@ -10710,9 +10911,9 @@ async function getAuditLogAlerts(teamId) {
   const db = await getDb();
   if (!db) return [];
   if (teamId) {
-    return db.select().from(auditLogAlerts).where(or2(eq7(auditLogAlerts.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc7(auditLogAlerts.createdAt));
+    return db.select().from(auditLogAlerts).where(or2(eq8(auditLogAlerts.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc8(auditLogAlerts.createdAt));
   }
-  return db.select().from(auditLogAlerts).orderBy(desc7(auditLogAlerts.createdAt));
+  return db.select().from(auditLogAlerts).orderBy(desc8(auditLogAlerts.createdAt));
 }
 async function checkAndTriggerAlerts(logId, context, data, riskLevel) {
   const db = await getDb();
@@ -10740,7 +10941,7 @@ async function checkAndTriggerAlerts(logId, context, data, riskLevel) {
       await db.update(auditLogAlerts).set({
         lastTriggeredAt: /* @__PURE__ */ new Date(),
         triggerCount: sql3`triggerCount + 1`
-      }).where(eq7(auditLogAlerts.id, alert.id));
+      }).where(eq8(auditLogAlerts.id, alert.id));
       console.log(`[AuditAlert] Triggered: ${alert.name} for log ${logId}`);
     }
   }
@@ -10766,35 +10967,35 @@ async function getSavedQueries(userId, teamId) {
   if (!db) return [];
   const conditions = [
     or2(
-      eq7(auditLogSavedQueries.userId, userId),
-      and4(eq7(auditLogSavedQueries.isShared, true), teamId ? eq7(auditLogSavedQueries.teamId, teamId) : sql3`1=1`)
+      eq8(auditLogSavedQueries.userId, userId),
+      and5(eq8(auditLogSavedQueries.isShared, true), teamId ? eq8(auditLogSavedQueries.teamId, teamId) : sql3`1=1`)
     )
   ];
-  return db.select().from(auditLogSavedQueries).where(and4(...conditions)).orderBy(desc7(auditLogSavedQueries.createdAt));
+  return db.select().from(auditLogSavedQueries).where(and5(...conditions)).orderBy(desc8(auditLogSavedQueries.createdAt));
 }
 async function deleteSavedQuery(queryId, userId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(auditLogSavedQueries).where(and4(eq7(auditLogSavedQueries.id, queryId), eq7(auditLogSavedQueries.userId, userId)));
+  await db.delete(auditLogSavedQueries).where(and5(eq8(auditLogSavedQueries.id, queryId), eq8(auditLogSavedQueries.userId, userId)));
 }
 async function getUserSessions(userId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(userSessions).where(and4(eq7(userSessions.userId, userId), eq7(userSessions.isActive, true))).orderBy(desc7(userSessions.lastActivityAt));
+  return db.select().from(userSessions).where(and5(eq8(userSessions.userId, userId), eq8(userSessions.isActive, true))).orderBy(desc8(userSessions.lastActivityAt));
 }
 async function invalidateSession(sessionId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(userSessions).set({ isActive: false }).where(eq7(userSessions.sessionId, sessionId));
+  await db.update(userSessions).set({ isActive: false }).where(eq8(userSessions.sessionId, sessionId));
 }
 async function invalidateAllUserSessions(userId, exceptSessionId) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const conditions = [eq7(userSessions.userId, userId)];
+  const conditions = [eq8(userSessions.userId, userId)];
   if (exceptSessionId) {
     conditions.push(sql3`sessionId != ${exceptSessionId}`);
   }
-  await db.update(userSessions).set({ isActive: false }).where(and4(...conditions));
+  await db.update(userSessions).set({ isActive: false }).where(and5(...conditions));
 }
 async function exportAuditLogs(filters, format = "json") {
   const { logs } = await getAuditLogs(filters, { page: 1, limit: 1e4 });
@@ -11610,6 +11811,623 @@ var auditLogRouter = router({
   })
 });
 
+// server/routers/reports.ts
+import { z as z20 } from "zod";
+
+// server/services/pdfReports.ts
+import { eq as eq9, and as and6, desc as desc9, gte as gte5, lte as lte4 } from "drizzle-orm";
+async function getTeamAnalyticsData(teamId, startDate, endDate) {
+  const db = await getDb();
+  if (!db) return null;
+  const team = await db.select().from(teams).where(eq9(teams.id, teamId)).limit(1);
+  if (team.length === 0) return null;
+  const members = await db.select({
+    userId: teamMembers.userId,
+    role: teamMembers.role,
+    joinedAt: teamMembers.createdAt,
+    userName: users.name,
+    userEmail: users.email
+  }).from(teamMembers).leftJoin(users, eq9(teamMembers.userId, users.id)).where(eq9(teamMembers.teamId, teamId));
+  const logs = await db.select().from(auditLogs).where(
+    and6(
+      eq9(auditLogs.teamId, teamId),
+      gte5(auditLogs.createdAt, startDate),
+      lte4(auditLogs.createdAt, endDate)
+    )
+  ).orderBy(desc9(auditLogs.createdAt)).limit(1e3);
+  const actionCounts = {};
+  const riskCounts = { low: 0, medium: 0, high: 0, critical: 0 };
+  const dailyActivity = {};
+  const userActivity = {};
+  for (const log of logs) {
+    actionCounts[log.action] = (actionCounts[log.action] || 0) + 1;
+    if (log.riskLevel) {
+      riskCounts[log.riskLevel] = (riskCounts[log.riskLevel] || 0) + 1;
+    }
+    const day = new Date(log.createdAt).toISOString().split("T")[0];
+    dailyActivity[day] = (dailyActivity[day] || 0) + 1;
+    if (log.userId) {
+      userActivity[log.userId.toString()] = (userActivity[log.userId.toString()] || 0) + 1;
+    }
+  }
+  return {
+    team: team[0],
+    members,
+    totalLogs: logs.length,
+    actionCounts,
+    riskCounts,
+    dailyActivity,
+    userActivity,
+    recentLogs: logs.slice(0, 20)
+  };
+}
+async function getAuditSummaryData(startDate, endDate, teamId) {
+  const db = await getDb();
+  if (!db) return null;
+  const conditions = [
+    gte5(auditLogs.createdAt, startDate),
+    lte4(auditLogs.createdAt, endDate)
+  ];
+  if (teamId) {
+    conditions.push(eq9(auditLogs.teamId, teamId));
+  }
+  const logs = await db.select().from(auditLogs).where(and6(...conditions)).orderBy(desc9(auditLogs.createdAt)).limit(5e3);
+  const byAction = {};
+  const byRisk = { low: 0, medium: 0, high: 0, critical: 0 };
+  const byStatus = { success: 0, failure: 0, pending: 0 };
+  const byResourceType = {};
+  const byHour = {};
+  const byDay = {};
+  for (const log of logs) {
+    byAction[log.action] = (byAction[log.action] || 0) + 1;
+    if (log.riskLevel) byRisk[log.riskLevel] = (byRisk[log.riskLevel] || 0) + 1;
+    if (log.status) byStatus[log.status] = (byStatus[log.status] || 0) + 1;
+    if (log.resourceType) byResourceType[log.resourceType] = (byResourceType[log.resourceType] || 0) + 1;
+    const date = new Date(log.createdAt);
+    byHour[date.getHours()] = (byHour[date.getHours()] || 0) + 1;
+    const day = date.toISOString().split("T")[0];
+    byDay[day] = (byDay[day] || 0) + 1;
+  }
+  const criticalEvents = logs.filter((l) => l.riskLevel === "critical" || l.riskLevel === "high");
+  return {
+    totalEvents: logs.length,
+    byAction,
+    byRisk,
+    byStatus,
+    byResourceType,
+    byHour,
+    byDay,
+    criticalEvents: criticalEvents.slice(0, 50),
+    failedEvents: logs.filter((l) => l.status === "failure").slice(0, 50)
+  };
+}
+function generateActivityChart(dailyData) {
+  const sortedDays = Object.keys(dailyData).sort();
+  return {
+    type: "line",
+    title: "Daily Activity",
+    labels: sortedDays.map((d) => new Date(d).toLocaleDateString()),
+    datasets: [{
+      label: "Events",
+      data: sortedDays.map((d) => dailyData[d]),
+      borderColor: "#3B82F6",
+      backgroundColor: "rgba(59, 130, 246, 0.1)"
+    }]
+  };
+}
+function generateRiskDistributionChart(riskData) {
+  return {
+    type: "doughnut",
+    title: "Risk Distribution",
+    labels: ["Low", "Medium", "High", "Critical"],
+    datasets: [{
+      label: "Events",
+      data: [riskData.low || 0, riskData.medium || 0, riskData.high || 0, riskData.critical || 0],
+      backgroundColor: ["#22C55E", "#EAB308", "#F97316", "#EF4444"]
+    }]
+  };
+}
+function generateActionBreakdownChart(actionData) {
+  const sortedActions = Object.entries(actionData).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  return {
+    type: "bar",
+    title: "Top Actions",
+    labels: sortedActions.map(([action]) => action),
+    datasets: [{
+      label: "Count",
+      data: sortedActions.map(([, count2]) => count2),
+      backgroundColor: "#8B5CF6"
+    }]
+  };
+}
+function generateHourlyActivityChart(hourlyData) {
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  return {
+    type: "bar",
+    title: "Activity by Hour",
+    labels: hours.map((h) => `${h}:00`),
+    datasets: [{
+      label: "Events",
+      data: hours.map((h) => hourlyData[h] || 0),
+      backgroundColor: "#06B6D4"
+    }]
+  };
+}
+function generateChartSvg(chart) {
+  const width = 400;
+  const height = 250;
+  const padding = 40;
+  if (chart.type === "bar") {
+    const data = chart.datasets[0].data;
+    const maxValue = Math.max(...data, 1);
+    const barWidth = (width - padding * 2) / data.length - 4;
+    let bars = "";
+    data.forEach((value, i) => {
+      const barHeight = value / maxValue * (height - padding * 2);
+      const x = padding + i * (barWidth + 4);
+      const y = height - padding - barHeight;
+      bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${Array.isArray(chart.datasets[0].backgroundColor) ? chart.datasets[0].backgroundColor[i] : chart.datasets[0].backgroundColor || "#3B82F6"}" rx="2"/>`;
+      bars += `<text x="${x + barWidth / 2}" y="${height - 10}" text-anchor="middle" font-size="8" fill="#666">${chart.labels[i].slice(0, 8)}</text>`;
+    });
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${width}" height="${height}" fill="#f8f9fa" rx="8"/>
+      <text x="${width / 2}" y="20" text-anchor="middle" font-weight="bold" font-size="12" fill="#333">${chart.title}</text>
+      ${bars}
+    </svg>`;
+  }
+  if (chart.type === "line") {
+    const data = chart.datasets[0].data;
+    const maxValue = Math.max(...data, 1);
+    const points = [];
+    data.forEach((value, i) => {
+      const x = padding + i / (data.length - 1 || 1) * (width - padding * 2);
+      const y = height - padding - value / maxValue * (height - padding * 2);
+      points.push(`${x},${y}`);
+    });
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${width}" height="${height}" fill="#f8f9fa" rx="8"/>
+      <text x="${width / 2}" y="20" text-anchor="middle" font-weight="bold" font-size="12" fill="#333">${chart.title}</text>
+      <polyline points="${points.join(" ")}" fill="none" stroke="${chart.datasets[0].borderColor || "#3B82F6"}" stroke-width="2"/>
+      ${points.map((p, i) => `<circle cx="${p.split(",")[0]}" cy="${p.split(",")[1]}" r="3" fill="${chart.datasets[0].borderColor || "#3B82F6"}"/>`).join("")}
+    </svg>`;
+  }
+  if (chart.type === "doughnut" || chart.type === "pie") {
+    const data = chart.datasets[0].data;
+    const total = data.reduce((a, b) => a + b, 0) || 1;
+    const colors = chart.datasets[0].backgroundColor;
+    const cx = width / 2;
+    const cy = height / 2 + 10;
+    const r = 70;
+    const innerR = chart.type === "doughnut" ? 40 : 0;
+    let paths = "";
+    let startAngle = -Math.PI / 2;
+    data.forEach((value, i) => {
+      const angle = value / total * Math.PI * 2;
+      const endAngle = startAngle + angle;
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      const largeArc = angle > Math.PI ? 1 : 0;
+      if (innerR > 0) {
+        const ix1 = cx + innerR * Math.cos(startAngle);
+        const iy1 = cy + innerR * Math.sin(startAngle);
+        const ix2 = cx + innerR * Math.cos(endAngle);
+        const iy2 = cy + innerR * Math.sin(endAngle);
+        paths += `<path d="M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix1} ${iy1} Z" fill="${colors[i]}"/>`;
+      } else {
+        paths += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${colors[i]}"/>`;
+      }
+      startAngle = endAngle;
+    });
+    let legend = "";
+    chart.labels.forEach((label, i) => {
+      legend += `<rect x="${width - 100}" y="${40 + i * 18}" width="12" height="12" fill="${colors[i]}" rx="2"/>`;
+      legend += `<text x="${width - 82}" y="${50 + i * 18}" font-size="10" fill="#333">${label}: ${data[i]}</text>`;
+    });
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${width}" height="${height}" fill="#f8f9fa" rx="8"/>
+      <text x="${width / 2}" y="20" text-anchor="middle" font-weight="bold" font-size="12" fill="#333">${chart.title}</text>
+      ${paths}
+      ${legend}
+    </svg>`;
+  }
+  return "";
+}
+function generateHtmlReport(report) {
+  const chartsHtml = report.sections.flatMap((s) => s.charts || []).map((chart) => generateChartSvg(chart)).join("\n");
+  const sectionsHtml = report.sections.map((section) => `
+    <div class="section">
+      <h2>${section.title}</h2>
+      <div class="content">${section.content}</div>
+      ${section.charts ? section.charts.map((c) => generateChartSvg(c)).join("") : ""}
+      ${section.table ? `
+        <table>
+          <thead>
+            <tr>${section.table.headers.map((h) => `<th>${h}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${section.table.rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      ` : ""}
+    </div>
+  `).join("\n");
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${report.title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333; line-height: 1.6; padding: 40px; max-width: 1000px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+    .header h1 { font-size: 28px; color: #1f2937; margin-bottom: 8px; }
+    .header .meta { color: #6b7280; font-size: 14px; }
+    .summary { background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%); color: white; padding: 24px; border-radius: 12px; margin-bottom: 32px; }
+    .summary h2 { font-size: 18px; margin-bottom: 12px; }
+    .summary p { opacity: 0.95; }
+    .section { margin-bottom: 32px; }
+    .section h2 { font-size: 20px; color: #1f2937; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+    .content { margin-bottom: 16px; }
+    .ai-analysis { background: #f0fdf4; border-left: 4px solid #22c55e; padding: 16px; border-radius: 0 8px 8px 0; margin-top: 24px; }
+    .ai-analysis h3 { color: #166534; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: #f9fafb; font-weight: 600; color: #374151; }
+    tr:hover { background: #f9fafb; }
+    svg { margin: 16px 0; display: block; }
+    .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 12px; }
+    @media print { body { padding: 20px; } .section { page-break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${report.title}</h1>
+    <div class="meta">
+      Generated: ${new Date(report.generatedAt).toLocaleString()}<br>
+      Period: ${report.dateRange.start} to ${report.dateRange.end}
+    </div>
+  </div>
+  
+  <div class="summary">
+    <h2>Executive Summary</h2>
+    <p>${report.summary}</p>
+  </div>
+  
+  ${sectionsHtml}
+  
+  ${report.aiAnalysis ? `
+    <div class="ai-analysis">
+      <h3>\u{1F916} AI Analysis & Recommendations</h3>
+      <p>${report.aiAnalysis}</p>
+    </div>
+  ` : ""}
+  
+  <div class="footer">
+    DevOps AI Dashboard - Report ID: ${report.id}
+  </div>
+</body>
+</html>`;
+}
+async function generateTeamAnalyticsReport(config, userId) {
+  if (!config.teamId) return null;
+  const data = await getTeamAnalyticsData(config.teamId, config.startDate, config.endDate);
+  if (!data) return null;
+  const sections = [
+    {
+      title: "Team Overview",
+      content: `<p><strong>Team:</strong> ${data.team.name}</p>
+        <p><strong>Members:</strong> ${data.members.length}</p>
+        <p><strong>Total Events:</strong> ${data.totalLogs}</p>
+        <p><strong>Period:</strong> ${config.startDate.toLocaleDateString()} - ${config.endDate.toLocaleDateString()}</p>`
+    },
+    {
+      title: "Activity Analysis",
+      content: `<p>The team recorded ${data.totalLogs} events during this period.</p>`,
+      charts: config.includeCharts ? [
+        generateActivityChart(data.dailyActivity),
+        generateRiskDistributionChart(data.riskCounts)
+      ] : void 0
+    },
+    {
+      title: "Action Breakdown",
+      content: `<p>Most frequent actions performed by team members:</p>`,
+      charts: config.includeCharts ? [generateActionBreakdownChart(data.actionCounts)] : void 0,
+      table: {
+        headers: ["Action", "Count", "Percentage"],
+        rows: Object.entries(data.actionCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([action, count2]) => [
+          action,
+          count2.toString(),
+          `${(count2 / data.totalLogs * 100).toFixed(1)}%`
+        ])
+      }
+    },
+    {
+      title: "Team Members Activity",
+      content: `<p>Activity breakdown by team member:</p>`,
+      table: {
+        headers: ["Member", "Role", "Events", "Joined"],
+        rows: data.members.map((m) => [
+          m.userName || "Unknown",
+          m.role,
+          (data.userActivity[m.userId.toString()] || 0).toString(),
+          m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "N/A"
+        ])
+      }
+    }
+  ];
+  let aiAnalysis;
+  if (config.includeAIAnalysis) {
+    try {
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "You are a DevOps analyst. Provide brief, actionable insights based on team activity data. Focus on security, efficiency, and recommendations. Keep response under 200 words."
+          },
+          {
+            role: "user",
+            content: `Analyze this team activity data:
+Team: ${data.team.name}
+Members: ${data.members.length}
+Total Events: ${data.totalLogs}
+Risk Distribution: ${JSON.stringify(data.riskCounts)}
+Top Actions: ${JSON.stringify(Object.entries(data.actionCounts).slice(0, 5))}
+
+Provide key insights and recommendations.`
+          }
+        ]
+      });
+      aiAnalysis = typeof response.choices[0]?.message?.content === "string" ? response.choices[0].message.content : void 0;
+    } catch (e) {
+      console.error("AI analysis failed:", e);
+    }
+  }
+  const report = {
+    id: `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    type: "team_analytics",
+    title: `Team Analytics Report - ${data.team.name}`,
+    generatedAt: Date.now(),
+    generatedBy: userId,
+    teamId: config.teamId,
+    dateRange: {
+      start: config.startDate.toISOString().split("T")[0],
+      end: config.endDate.toISOString().split("T")[0]
+    },
+    sections,
+    summary: `This report covers ${data.totalLogs} events from ${data.members.length} team members over the selected period. Risk distribution shows ${data.riskCounts.critical || 0} critical, ${data.riskCounts.high || 0} high, ${data.riskCounts.medium || 0} medium, and ${data.riskCounts.low || 0} low risk events.`,
+    aiAnalysis,
+    htmlContent: ""
+  };
+  report.htmlContent = generateHtmlReport(report);
+  return report;
+}
+async function generateAuditSummaryReport(config, userId) {
+  const data = await getAuditSummaryData(config.startDate, config.endDate, config.teamId);
+  if (!data) return null;
+  const sections = [
+    {
+      title: "Overview",
+      content: `<p><strong>Total Events:</strong> ${data.totalEvents}</p>
+        <p><strong>Success Rate:</strong> ${(data.byStatus.success / data.totalEvents * 100).toFixed(1)}%</p>
+        <p><strong>Critical Events:</strong> ${data.criticalEvents.length}</p>
+        <p><strong>Failed Operations:</strong> ${data.failedEvents.length}</p>`
+    },
+    {
+      title: "Risk Analysis",
+      content: `<p>Distribution of events by risk level:</p>`,
+      charts: config.includeCharts ? [generateRiskDistributionChart(data.byRisk)] : void 0
+    },
+    {
+      title: "Activity Patterns",
+      content: `<p>When are most events occurring?</p>`,
+      charts: config.includeCharts ? [
+        generateActivityChart(data.byDay),
+        generateHourlyActivityChart(data.byHour)
+      ] : void 0
+    },
+    {
+      title: "Top Actions",
+      content: `<p>Most frequently performed actions:</p>`,
+      charts: config.includeCharts ? [generateActionBreakdownChart(data.byAction)] : void 0
+    },
+    {
+      title: "Critical Events",
+      content: `<p>High-risk events requiring attention:</p>`,
+      table: data.criticalEvents.length > 0 ? {
+        headers: ["Time", "Action", "Resource", "Risk", "Status"],
+        rows: data.criticalEvents.slice(0, 20).map((e) => [
+          new Date(e.createdAt).toLocaleString(),
+          e.action,
+          e.resourceName || "-",
+          e.riskLevel || "-",
+          e.status || "-"
+        ])
+      } : void 0
+    }
+  ];
+  let aiAnalysis;
+  if (config.includeAIAnalysis) {
+    try {
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "You are a security analyst. Analyze audit log data and provide security insights and recommendations. Keep response under 200 words."
+          },
+          {
+            role: "user",
+            content: `Analyze this audit summary:
+Total Events: ${data.totalEvents}
+Risk Distribution: ${JSON.stringify(data.byRisk)}
+Status Distribution: ${JSON.stringify(data.byStatus)}
+Critical Events: ${data.criticalEvents.length}
+Failed Events: ${data.failedEvents.length}
+
+Provide security insights and recommendations.`
+          }
+        ]
+      });
+      aiAnalysis = typeof response.choices[0]?.message?.content === "string" ? response.choices[0].message.content : void 0;
+    } catch (e) {
+      console.error("AI analysis failed:", e);
+    }
+  }
+  const report = {
+    id: `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    type: "audit_summary",
+    title: "Audit Log Summary Report",
+    generatedAt: Date.now(),
+    generatedBy: userId,
+    teamId: config.teamId,
+    dateRange: {
+      start: config.startDate.toISOString().split("T")[0],
+      end: config.endDate.toISOString().split("T")[0]
+    },
+    sections,
+    summary: `This audit summary covers ${data.totalEvents} events. The success rate is ${(data.byStatus.success / data.totalEvents * 100).toFixed(1)}%. There were ${data.criticalEvents.length} critical events and ${data.failedEvents.length} failed operations during this period.`,
+    aiAnalysis,
+    htmlContent: ""
+  };
+  report.htmlContent = generateHtmlReport(report);
+  return report;
+}
+async function generateReport(config, userId) {
+  switch (config.type) {
+    case "team_analytics":
+      return generateTeamAnalyticsReport(config, userId);
+    case "audit_summary":
+    case "security_report":
+      return generateAuditSummaryReport(config, userId);
+    default:
+      return generateAuditSummaryReport(config, userId);
+  }
+}
+
+// server/routers/reports.ts
+var reportTypeSchema = z20.enum([
+  "team_analytics",
+  "audit_summary",
+  "security_report",
+  "deployment_report",
+  "activity_report"
+]);
+var reportsRouter = router({
+  // Generate a report
+  generate: protectedProcedure.input(
+    z20.object({
+      type: reportTypeSchema,
+      teamId: z20.number().optional(),
+      startDate: z20.string(),
+      // ISO date string
+      endDate: z20.string(),
+      // ISO date string
+      includeCharts: z20.boolean().optional().default(true),
+      includeAIAnalysis: z20.boolean().optional().default(true)
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const report = await generateReport(
+      {
+        type: input.type,
+        teamId: input.teamId,
+        userId: ctx.user.id,
+        startDate: new Date(input.startDate),
+        endDate: new Date(input.endDate),
+        includeCharts: input.includeCharts,
+        includeAIAnalysis: input.includeAIAnalysis
+      },
+      ctx.user.id
+    );
+    if (!report) {
+      throw new Error("Failed to generate report");
+    }
+    return {
+      id: report.id,
+      title: report.title,
+      type: report.type,
+      generatedAt: report.generatedAt,
+      dateRange: report.dateRange,
+      summary: report.summary,
+      aiAnalysis: report.aiAnalysis,
+      htmlContent: report.htmlContent
+    };
+  }),
+  // Get available report types
+  getTypes: protectedProcedure.query(async () => {
+    return [
+      {
+        type: "team_analytics",
+        name: "Team Analytics Report",
+        description: "Comprehensive team activity and performance analysis",
+        requiresTeam: true
+      },
+      {
+        type: "audit_summary",
+        name: "Audit Log Summary",
+        description: "Summary of all audit events with risk analysis",
+        requiresTeam: false
+      },
+      {
+        type: "security_report",
+        name: "Security Report",
+        description: "Security-focused analysis of events and threats",
+        requiresTeam: false
+      },
+      {
+        type: "deployment_report",
+        name: "Deployment Report",
+        description: "Deployment history and success metrics",
+        requiresTeam: false
+      },
+      {
+        type: "activity_report",
+        name: "Activity Report",
+        description: "User and system activity overview",
+        requiresTeam: false
+      }
+    ];
+  }),
+  // Get report presets (common date ranges)
+  getPresets: protectedProcedure.query(async () => {
+    const now = /* @__PURE__ */ new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return [
+      {
+        name: "Last 7 Days",
+        startDate: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1e3).toISOString(),
+        endDate: now.toISOString()
+      },
+      {
+        name: "Last 30 Days",
+        startDate: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1e3).toISOString(),
+        endDate: now.toISOString()
+      },
+      {
+        name: "Last 90 Days",
+        startDate: new Date(today.getTime() - 90 * 24 * 60 * 60 * 1e3).toISOString(),
+        endDate: now.toISOString()
+      },
+      {
+        name: "This Month",
+        startDate: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+        endDate: now.toISOString()
+      },
+      {
+        name: "Last Month",
+        startDate: new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString(),
+        endDate: new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
+      },
+      {
+        name: "This Year",
+        startDate: new Date(now.getFullYear(), 0, 1).toISOString(),
+        endDate: now.toISOString()
+      }
+    ];
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -11635,7 +12453,8 @@ var appRouter = router({
   chatbot: chatBotRouter,
   bluegreen: blueGreenRouter,
   teams: teamsRouter,
-  auditLog: auditLogRouter
+  auditLog: auditLogRouter,
+  reports: reportsRouter
 });
 
 // server/_core/context.ts
