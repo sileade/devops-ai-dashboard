@@ -21,6 +21,9 @@ import {
   clustersRouter,
   healthRouter,
   canaryRouter,
+  argoCDRouter,
+  chatBotRouter,
+  blueGreenRouter,
 } from "./routers/index";
 
 /**
@@ -57,6 +60,9 @@ export const appRouter = router({
   clusters: clustersRouter,
   health: healthRouter,
   canary: canaryRouter,
+  argocd: argoCDRouter,
+  chatbot: chatBotRouter,
+  bluegreen: blueGreenRouter,
 });
 
 export type AppRouter = typeof appRouter;

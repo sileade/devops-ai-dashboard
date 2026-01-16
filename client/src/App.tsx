@@ -26,6 +26,9 @@ import EmailSettings from "./pages/EmailSettings";
 import PrometheusSettings from "./pages/PrometheusSettings";
 import GitOps from "./pages/GitOps";
 import CanaryDeployments from "./pages/CanaryDeployments";
+import ArgoCD from "./pages/ArgoCD";
+import ChatBot from "./pages/ChatBot";
+import BlueGreen from "./pages/BlueGreen";
 
 function Router() {
   return (
@@ -52,6 +55,9 @@ function Router() {
         <Route path="/settings/prometheus" component={PrometheusSettings} />
         <Route path="/gitops" component={GitOps} />
         <Route path="/canary" component={CanaryDeployments} />
+        <Route path="/argocd" component={ArgoCD} />
+        <Route path="/chatbot" component={ChatBot} />
+        <Route path="/bluegreen" component={BlueGreen} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

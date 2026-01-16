@@ -113,6 +113,55 @@ Canary Configuration:
   autoRollbackEnabled: true     # Enable automatic rollback
 ```
 
+### ArgoCD Integration (NEW)
+
+Full GitOps workflow management with ArgoCD:
+
+| Feature | Description |
+|---------|-------------|
+| **Application Management** | Create, sync, and manage ArgoCD applications |
+| **Automatic Sync** | Trigger sync on git push events |
+| **Health Monitoring** | Real-time application health status |
+| **Rollback Support** | One-click rollback to previous revisions |
+| **AI Analysis** | AI-powered recommendations for deployments |
+
+### Slack/Discord Bot (NEW)
+
+Chat-based deployment management:
+
+- **/deploy** - Deploy applications with confirmation buttons
+- **/rollback** - Rollback to previous versions
+- **/status** - Check infrastructure status
+- **/scale** - Scale application replicas
+- **/restart** - Restart applications
+- **/logs** - View application logs
+- **/ai** - Ask AI for DevOps help
+
+**Setup:**
+1. Create Slack/Discord app with slash commands
+2. Configure webhook URLs in the dashboard
+3. Use interactive buttons for safe confirmations
+
+### Blue-Green Deployments (NEW)
+
+Zero-downtime deployments with instant traffic switching:
+
+| Feature | Description |
+|---------|-------------|
+| **Dual Environments** | Maintain blue and green environments simultaneously |
+| **Instant Switch** | Switch 100% traffic instantly between environments |
+| **Gradual Switch** | Optionally shift traffic in configurable increments |
+| **Auto-Rollback** | Automatic rollback on health check failures |
+| **Health Monitoring** | Real-time replica health tracking |
+
+**Blue-Green Flow:**
+
+1. Deploy new version to inactive environment (e.g., green)
+2. Wait for all replicas to become healthy
+3. Switch traffic from active (blue) to new (green)
+4. Keep old environment as instant rollback target
+5. Next deployment goes to blue environment
+
 ### Security Features
 
 - **Rate Limiting**: Multi-tier rate limiting to protect against DDoS attacks
