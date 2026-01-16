@@ -50,6 +50,13 @@
       "when": 1768546332724,
       "tag": "0006_light_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1768550549614,
+      "tag": "0007_spooky_warpath",
+      "breakpoints": true
     }
   ]
 }

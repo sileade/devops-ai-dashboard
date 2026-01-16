@@ -664,6 +664,284 @@ var canaryTemplates = mysqlTable("canary_templates", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 });
+var teams = mysqlTable("teams", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  // Organization hierarchy
+  parentTeamId: int("parentTeamId"),
+  // For nested teams/departments
+  // Owner
+  ownerId: int("ownerId").notNull(),
+  // Settings
+  settings: json("settings"),
+  // Team-specific settings
+  // Branding
+  logoUrl: varchar("logoUrl", { length: 500 }),
+  primaryColor: varchar("primaryColor", { length: 7 }).default("#3B82F6"),
+  // Limits
+  maxMembers: int("maxMembers").default(10),
+  maxApplications: int("maxApplications").default(5),
+  maxClusters: int("maxClusters").default(3),
+  // Billing (for future use)
+  plan: mysqlEnum("plan", ["free", "starter", "professional", "enterprise"]).default("free").notNull(),
+  billingEmail: varchar("billingEmail", { length: 320 }),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  suspendedAt: timestamp("suspendedAt"),
+  suspendedReason: text("suspendedReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var teamMembers = mysqlTable("team_members", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  userId: int("userId").notNull(),
+  // Role within the team
+  role: mysqlEnum("role", ["owner", "admin", "member", "viewer"]).default("member").notNull(),
+  // Permissions (granular override)
+  permissions: json("permissions"),
+  // Custom permissions override
+  // Status
+  status: mysqlEnum("status", ["active", "invited", "suspended"]).default("active").notNull(),
+  // Invitation tracking
+  invitedBy: int("invitedBy"),
+  invitedAt: timestamp("invitedAt"),
+  acceptedAt: timestamp("acceptedAt"),
+  // Activity
+  lastActiveAt: timestamp("lastActiveAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var teamInvitations = mysqlTable("team_invitations", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  // Invitation details
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["admin", "member", "viewer"]).default("member").notNull(),
+  // Token for accepting
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  // Sender
+  invitedBy: int("invitedBy").notNull(),
+  // Message
+  personalMessage: text("personalMessage"),
+  // Status
+  status: mysqlEnum("status", ["pending", "accepted", "declined", "expired", "cancelled"]).default("pending").notNull(),
+  // Timing
+  expiresAt: timestamp("expiresAt").notNull(),
+  respondedAt: timestamp("respondedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var teamResources = mysqlTable("team_resources", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  // Resource type and ID
+  resourceType: mysqlEnum("resourceType", [
+    "application",
+    "cluster",
+    "connection",
+    "autoscaling_rule",
+    "scheduled_scaling",
+    "ab_test",
+    "canary_deployment",
+    "prometheus_config",
+    "email_config"
+  ]).notNull(),
+  resourceId: int("resourceId").notNull(),
+  // Access level for this resource
+  accessLevel: mysqlEnum("accessLevel", ["full", "read_write", "read_only"]).default("full").notNull(),
+  // Metadata
+  addedBy: int("addedBy").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var teamActivity = mysqlTable("team_activity", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  userId: int("userId"),
+  // Activity type
+  activityType: mysqlEnum("activityType", [
+    "member_joined",
+    "member_left",
+    "member_role_changed",
+    "resource_added",
+    "resource_removed",
+    "settings_changed",
+    "team_created",
+    "team_updated"
+  ]).notNull(),
+  // Activity details
+  description: text("description").notNull(),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Who
+  userId: int("userId"),
+  userEmail: varchar("userEmail", { length: 320 }),
+  userName: varchar("userName", { length: 255 }),
+  teamId: int("teamId"),
+  // What
+  action: mysqlEnum("action", [
+    // Auth actions
+    "login",
+    "logout",
+    "login_failed",
+    "password_changed",
+    "mfa_enabled",
+    "mfa_disabled",
+    // Resource CRUD
+    "create",
+    "read",
+    "update",
+    "delete",
+    // Deployment actions
+    "deploy",
+    "rollback",
+    "scale",
+    "restart",
+    "stop",
+    "start",
+    // Team actions
+    "team_create",
+    "team_update",
+    "team_delete",
+    "member_invite",
+    "member_remove",
+    "member_role_change",
+    // Configuration actions
+    "config_change",
+    "secret_access",
+    "secret_update",
+    // AI actions
+    "ai_query",
+    "ai_recommendation_applied",
+    // Export/Import
+    "export",
+    "import",
+    // Admin actions
+    "admin_action",
+    "system_config_change"
+  ]).notNull(),
+  // Resource affected
+  resourceType: varchar("resourceType", { length: 100 }),
+  resourceId: varchar("resourceId", { length: 255 }),
+  resourceName: varchar("resourceName", { length: 255 }),
+  // Details
+  description: text("description").notNull(),
+  // Before/After state for changes
+  previousState: json("previousState"),
+  newState: json("newState"),
+  // Request context
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: varchar("userAgent", { length: 500 }),
+  requestId: varchar("requestId", { length: 64 }),
+  sessionId: varchar("sessionId", { length: 64 }),
+  // Location (from IP)
+  country: varchar("country", { length: 2 }),
+  city: varchar("city", { length: 100 }),
+  // Result
+  status: mysqlEnum("status", ["success", "failure", "partial"]).default("success").notNull(),
+  errorMessage: text("errorMessage"),
+  // Risk assessment
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("low").notNull(),
+  isSuspicious: boolean("isSuspicious").default(false).notNull(),
+  suspiciousReason: text("suspiciousReason"),
+  // Timing
+  duration: int("duration"),
+  // milliseconds
+  // Additional metadata
+  metadata: json("metadata"),
+  tags: json("tags"),
+  // Array of tags for filtering
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var auditLogPolicies = mysqlTable("audit_log_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // What to retain
+  actionTypes: json("actionTypes"),
+  // Array of action types, null = all
+  resourceTypes: json("resourceTypes"),
+  // Array of resource types, null = all
+  riskLevels: json("riskLevels"),
+  // Array of risk levels, null = all
+  // Retention period
+  retentionDays: int("retentionDays").default(90).notNull(),
+  // Archive settings
+  archiveEnabled: boolean("archiveEnabled").default(false).notNull(),
+  archiveLocation: varchar("archiveLocation", { length: 500 }),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  lastAppliedAt: timestamp("lastAppliedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var auditLogAlerts = mysqlTable("audit_log_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Trigger conditions
+  triggerConditions: json("triggerConditions").notNull(),
+  // Rules for triggering
+  // Actions to take
+  notifyEmail: boolean("notifyEmail").default(true).notNull(),
+  notifySlack: boolean("notifySlack").default(false).notNull(),
+  notifyWebhook: boolean("notifyWebhook").default(false).notNull(),
+  webhookUrl: varchar("webhookUrl", { length: 500 }),
+  // Severity
+  severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("warning").notNull(),
+  // Cooldown
+  cooldownMinutes: int("cooldownMinutes").default(15).notNull(),
+  lastTriggeredAt: timestamp("lastTriggeredAt"),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  triggerCount: int("triggerCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var auditLogSavedQueries = mysqlTable("audit_log_saved_queries", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  teamId: int("teamId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Query parameters
+  filters: json("filters").notNull(),
+  // Display settings
+  columns: json("columns"),
+  // Which columns to show
+  sortBy: varchar("sortBy", { length: 100 }),
+  sortOrder: mysqlEnum("sortOrder", ["asc", "desc"]).default("desc"),
+  // Sharing
+  isShared: boolean("isShared").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var userSessions = mysqlTable("user_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+  // Device info
+  deviceType: varchar("deviceType", { length: 50 }),
+  browser: varchar("browser", { length: 100 }),
+  os: varchar("os", { length: 100 }),
+  // Location
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  country: varchar("country", { length: 2 }),
+  city: varchar("city", { length: 100 }),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  // Timing
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
 
 // server/_core/env.ts
 var ENV = {
@@ -9842,6 +10120,1496 @@ var blueGreenRouter = router({
   })
 });
 
+// server/routers/teams.ts
+import { z as z18 } from "zod";
+
+// server/services/teams.ts
+import { eq as eq6, and as and3, desc as desc6, sql as sql2, inArray } from "drizzle-orm";
+import { randomBytes } from "crypto";
+async function createTeam(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const existing = await db.select().from(teams).where(eq6(teams.slug, slug)).limit(1);
+  if (existing.length > 0) {
+    throw new Error("Team slug already exists");
+  }
+  const [team] = await db.insert(teams).values({
+    name: data.name,
+    slug,
+    description: data.description,
+    ownerId: data.ownerId,
+    parentTeamId: data.parentTeamId,
+    settings: data.settings,
+    logoUrl: data.logoUrl,
+    primaryColor: data.primaryColor || "#3B82F6",
+    maxMembers: data.maxMembers || 10,
+    maxApplications: data.maxApplications || 5,
+    maxClusters: data.maxClusters || 3,
+    plan: data.plan || "free"
+  }).$returningId();
+  await db.insert(teamMembers).values({
+    teamId: team.id,
+    userId: data.ownerId,
+    role: "owner",
+    status: "active",
+    acceptedAt: /* @__PURE__ */ new Date()
+  });
+  await logTeamActivity({
+    teamId: team.id,
+    userId: data.ownerId,
+    activityType: "team_created",
+    description: `Team "${data.name}" was created`,
+    metadata: { teamName: data.name, slug }
+  });
+  return team;
+}
+async function getTeam(teamId) {
+  const db = await getDb();
+  if (!db) return null;
+  const [team] = await db.select().from(teams).where(eq6(teams.id, teamId)).limit(1);
+  return team || null;
+}
+async function getTeamBySlug(slug) {
+  const db = await getDb();
+  if (!db) return null;
+  const [team] = await db.select().from(teams).where(eq6(teams.slug, slug)).limit(1);
+  return team || null;
+}
+async function getUserTeams(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  const memberships = await db.select({
+    team: teams,
+    membership: teamMembers
+  }).from(teamMembers).innerJoin(teams, eq6(teamMembers.teamId, teams.id)).where(and3(eq6(teamMembers.userId, userId), eq6(teamMembers.status, "active"))).orderBy(desc6(teams.createdAt));
+  return memberships.map((m) => ({
+    ...m.team,
+    role: m.membership.role,
+    membershipId: m.membership.id
+  }));
+}
+async function updateTeam(teamId, data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(teams).set(data).where(eq6(teams.id, teamId));
+  return getTeam(teamId);
+}
+async function deleteTeam(teamId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(teamMembers).where(eq6(teamMembers.teamId, teamId));
+  await db.delete(teamInvitations).where(eq6(teamInvitations.teamId, teamId));
+  await db.delete(teamResources).where(eq6(teamResources.teamId, teamId));
+  await db.delete(teamActivity).where(eq6(teamActivity.teamId, teamId));
+  await db.delete(teams).where(eq6(teams.id, teamId));
+}
+async function getTeamMembers(teamId) {
+  const db = await getDb();
+  if (!db) return [];
+  const members = await db.select().from(teamMembers).where(eq6(teamMembers.teamId, teamId)).orderBy(desc6(teamMembers.createdAt));
+  return members;
+}
+async function addTeamMember(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, data.teamId), eq6(teamMembers.userId, data.userId))).limit(1);
+  if (existing.length > 0) {
+    throw new Error("User is already a team member");
+  }
+  const team = await getTeam(data.teamId);
+  if (team) {
+    const memberCount = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(eq6(teamMembers.teamId, data.teamId));
+    if (memberCount[0].count >= (team.maxMembers || 10)) {
+      throw new Error("Team member limit reached");
+    }
+  }
+  const [member] = await db.insert(teamMembers).values({
+    teamId: data.teamId,
+    userId: data.userId,
+    role: data.role || "member",
+    status: "active",
+    invitedBy: data.invitedBy,
+    invitedAt: data.invitedBy ? /* @__PURE__ */ new Date() : void 0,
+    acceptedAt: /* @__PURE__ */ new Date()
+  }).$returningId();
+  await logTeamActivity({
+    teamId: data.teamId,
+    userId: data.userId,
+    activityType: "member_joined",
+    description: `User joined the team`,
+    metadata: { role: data.role || "member" }
+  });
+  return member;
+}
+async function updateTeamMemberRole(teamId, userId, newRole) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [current] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  if (!current) {
+    throw new Error("Member not found");
+  }
+  if (current.role === "owner") {
+    throw new Error("Cannot change owner role");
+  }
+  await db.update(teamMembers).set({ role: newRole }).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId)));
+  await logTeamActivity({
+    teamId,
+    userId,
+    activityType: "member_role_changed",
+    description: `Member role changed from ${current.role} to ${newRole}`,
+    metadata: { previousRole: current.role, newRole }
+  });
+}
+async function removeTeamMember(teamId, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [member] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  if (member?.role === "owner") {
+    throw new Error("Cannot remove team owner");
+  }
+  await db.delete(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId)));
+  await logTeamActivity({
+    teamId,
+    userId,
+    activityType: "member_left",
+    description: `Member left the team`
+  });
+}
+async function getUserTeamRole(teamId, userId) {
+  const db = await getDb();
+  if (!db) return null;
+  const [member] = await db.select().from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.userId, userId))).limit(1);
+  return member?.role || null;
+}
+async function createTeamInvitation(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(teamInvitations).where(
+    and3(
+      eq6(teamInvitations.teamId, data.teamId),
+      eq6(teamInvitations.email, data.email),
+      eq6(teamInvitations.status, "pending")
+    )
+  ).limit(1);
+  if (existing.length > 0) {
+    throw new Error("Invitation already pending for this email");
+  }
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = /* @__PURE__ */ new Date();
+  expiresAt.setDate(expiresAt.getDate() + (data.expiresInDays || 7));
+  const [invitation] = await db.insert(teamInvitations).values({
+    teamId: data.teamId,
+    email: data.email,
+    role: data.role || "member",
+    token,
+    invitedBy: data.invitedBy,
+    personalMessage: data.personalMessage,
+    expiresAt
+  }).$returningId();
+  return { ...invitation, token };
+}
+async function getTeamInvitations(teamId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(teamInvitations).where(eq6(teamInvitations.teamId, teamId)).orderBy(desc6(teamInvitations.createdAt));
+}
+async function acceptInvitation(token, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [invitation] = await db.select().from(teamInvitations).where(eq6(teamInvitations.token, token)).limit(1);
+  if (!invitation) {
+    throw new Error("Invitation not found");
+  }
+  if (invitation.status !== "pending") {
+    throw new Error("Invitation is no longer valid");
+  }
+  if (/* @__PURE__ */ new Date() > invitation.expiresAt) {
+    await db.update(teamInvitations).set({ status: "expired" }).where(eq6(teamInvitations.id, invitation.id));
+    throw new Error("Invitation has expired");
+  }
+  await addTeamMember({
+    teamId: invitation.teamId,
+    userId,
+    role: invitation.role,
+    invitedBy: invitation.invitedBy
+  });
+  await db.update(teamInvitations).set({ status: "accepted", respondedAt: /* @__PURE__ */ new Date() }).where(eq6(teamInvitations.id, invitation.id));
+  return invitation;
+}
+async function declineInvitation(token) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(teamInvitations).set({ status: "declined", respondedAt: /* @__PURE__ */ new Date() }).where(eq6(teamInvitations.token, token));
+}
+async function cancelInvitation(invitationId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(teamInvitations).set({ status: "cancelled" }).where(eq6(teamInvitations.id, invitationId));
+}
+async function addTeamResource(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [resource] = await db.insert(teamResources).values({
+    teamId: data.teamId,
+    resourceType: data.resourceType,
+    resourceId: data.resourceId,
+    accessLevel: data.accessLevel || "full",
+    addedBy: data.addedBy,
+    notes: data.notes
+  }).$returningId();
+  await logTeamActivity({
+    teamId: data.teamId,
+    userId: data.addedBy,
+    activityType: "resource_added",
+    description: `Added ${data.resourceType} resource`,
+    metadata: { resourceType: data.resourceType, resourceId: data.resourceId }
+  });
+  return resource;
+}
+async function getTeamResources(teamId, resourceType) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(teamResources).where(eq6(teamResources.teamId, teamId));
+  if (resourceType) {
+    query = db.select().from(teamResources).where(
+      and3(
+        eq6(teamResources.teamId, teamId),
+        eq6(teamResources.resourceType, resourceType)
+      )
+    );
+  }
+  return query.orderBy(desc6(teamResources.createdAt));
+}
+async function removeTeamResource(teamId, resourceType, resourceId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(teamResources).where(
+    and3(
+      eq6(teamResources.teamId, teamId),
+      eq6(teamResources.resourceType, resourceType),
+      eq6(teamResources.resourceId, resourceId)
+    )
+  );
+}
+async function checkResourceAccess(userId, resourceType, resourceId) {
+  const db = await getDb();
+  if (!db) return { hasAccess: false, accessLevel: null, teamId: null };
+  const userTeams = await getUserTeams(userId);
+  const teamIds = userTeams.map((t2) => t2.id);
+  if (teamIds.length === 0) {
+    return { hasAccess: false, accessLevel: null, teamId: null };
+  }
+  const [resource] = await db.select().from(teamResources).where(
+    and3(
+      inArray(teamResources.teamId, teamIds),
+      eq6(teamResources.resourceType, resourceType),
+      eq6(teamResources.resourceId, resourceId)
+    )
+  ).limit(1);
+  if (!resource) {
+    return { hasAccess: false, accessLevel: null, teamId: null };
+  }
+  const userRole = await getUserTeamRole(resource.teamId, userId);
+  if (userRole === "owner" || userRole === "admin") {
+    return { hasAccess: true, accessLevel: "full", teamId: resource.teamId };
+  }
+  return { hasAccess: true, accessLevel: resource.accessLevel, teamId: resource.teamId };
+}
+async function logTeamActivity(data) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(teamActivity).values({
+    teamId: data.teamId,
+    userId: data.userId,
+    activityType: data.activityType,
+    description: data.description,
+    metadata: data.metadata
+  });
+}
+async function getTeamActivity(teamId, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(teamActivity).where(eq6(teamActivity.teamId, teamId)).orderBy(desc6(teamActivity.createdAt)).limit(limit);
+}
+async function getTeamStats(teamId) {
+  const db = await getDb();
+  if (!db) return null;
+  const [memberCount] = await db.select({ count: sql2`count(*)` }).from(teamMembers).where(and3(eq6(teamMembers.teamId, teamId), eq6(teamMembers.status, "active")));
+  const [resourceCount] = await db.select({ count: sql2`count(*)` }).from(teamResources).where(eq6(teamResources.teamId, teamId));
+  const [pendingInvitations] = await db.select({ count: sql2`count(*)` }).from(teamInvitations).where(and3(eq6(teamInvitations.teamId, teamId), eq6(teamInvitations.status, "pending")));
+  const recentActivity = await getTeamActivity(teamId, 10);
+  return {
+    memberCount: memberCount.count,
+    resourceCount: resourceCount.count,
+    pendingInvitations: pendingInvitations.count,
+    recentActivity
+  };
+}
+async function getTeamInsights(teamId) {
+  const db = await getDb();
+  if (!db) return null;
+  const team = await getTeam(teamId);
+  if (!team) return null;
+  const stats = await getTeamStats(teamId);
+  const activity = await getTeamActivity(teamId, 100);
+  try {
+    const response = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content: `You are a team management AI assistant. Analyze team data and provide insights about team health, activity patterns, and recommendations.`
+        },
+        {
+          role: "user",
+          content: `Analyze this team data and provide insights:
+
+Team: ${team.name}
+Plan: ${team.plan}
+Members: ${stats?.memberCount || 0}/${team.maxMembers}
+Resources: ${stats?.resourceCount || 0}
+Pending Invitations: ${stats?.pendingInvitations || 0}
+
+Recent Activity (last 100 events):
+${activity.map((a) => `- ${a.activityType}: ${a.description}`).join("\n")}
+
+Provide:
+1. Team health score (0-100)
+2. Activity level assessment
+3. Key observations
+4. Recommendations for improvement`
+        }
+      ]
+    });
+    const content = response.choices[0]?.message?.content || "";
+    return {
+      analysis: content,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  } catch (error) {
+    console.error("Failed to generate team insights:", error);
+    return null;
+  }
+}
+
+// server/services/auditLog.ts
+import { eq as eq7, and as and4, desc as desc7, sql as sql3, or as or2, like as like3, gte as gte3, lte as lte3, inArray as inArray2 } from "drizzle-orm";
+function determineRiskLevel(action, data) {
+  const criticalActions = ["admin_action", "system_config_change", "secret_update"];
+  const highRiskActions = ["delete", "deploy", "rollback", "team_delete", "member_remove"];
+  const mediumRiskActions = ["update", "scale", "restart", "stop", "start", "config_change", "member_role_change"];
+  if (criticalActions.includes(action)) return "critical";
+  if (highRiskActions.includes(action)) return "high";
+  if (mediumRiskActions.includes(action)) return "medium";
+  return "low";
+}
+function detectSuspiciousActivity(action, context, data) {
+  if (action === "login_failed") {
+    return { isSuspicious: true, reason: "Failed login attempt" };
+  }
+  if (action === "delete" && data.metadata?.bulkOperation) {
+    return { isSuspicious: true, reason: "Bulk deletion operation" };
+  }
+  const hour = (/* @__PURE__ */ new Date()).getHours();
+  if (hour < 6 || hour > 22) {
+    if (["delete", "deploy", "rollback", "admin_action"].includes(action)) {
+      return { isSuspicious: true, reason: "High-risk action during off-hours" };
+    }
+  }
+  if (action === "secret_access" || action === "secret_update") {
+    return { isSuspicious: true, reason: "Secret access detected" };
+  }
+  return { isSuspicious: false };
+}
+async function createAuditLog(context, data) {
+  const db = await getDb();
+  if (!db) return null;
+  const riskLevel = determineRiskLevel(data.action, data);
+  const suspicious = detectSuspiciousActivity(data.action, context, data);
+  const [log] = await db.insert(auditLogs).values({
+    userId: context.userId,
+    userEmail: context.userEmail,
+    userName: context.userName,
+    teamId: context.teamId,
+    action: data.action,
+    resourceType: data.resourceType,
+    resourceId: data.resourceId,
+    resourceName: data.resourceName,
+    description: data.description,
+    previousState: data.previousState,
+    newState: data.newState,
+    ipAddress: context.ipAddress,
+    userAgent: context.userAgent,
+    requestId: context.requestId,
+    sessionId: context.sessionId,
+    status: data.status || "success",
+    errorMessage: data.errorMessage,
+    riskLevel,
+    isSuspicious: suspicious.isSuspicious,
+    suspiciousReason: suspicious.reason,
+    duration: data.duration,
+    metadata: data.metadata,
+    tags: data.tags
+  }).$returningId();
+  if (suspicious.isSuspicious) {
+    await checkAndTriggerAlerts(log.id, context, data, riskLevel);
+  }
+  return log;
+}
+async function getAuditLogs(filters = {}, pagination = { page: 1, limit: 50 }) {
+  const db = await getDb();
+  if (!db) return { logs: [], total: 0 };
+  const conditions = [];
+  if (filters.userId) {
+    conditions.push(eq7(auditLogs.userId, filters.userId));
+  }
+  if (filters.teamId) {
+    conditions.push(eq7(auditLogs.teamId, filters.teamId));
+  }
+  if (filters.action) {
+    if (Array.isArray(filters.action)) {
+      conditions.push(inArray2(auditLogs.action, filters.action));
+    } else {
+      conditions.push(eq7(auditLogs.action, filters.action));
+    }
+  }
+  if (filters.resourceType) {
+    conditions.push(eq7(auditLogs.resourceType, filters.resourceType));
+  }
+  if (filters.resourceId) {
+    conditions.push(eq7(auditLogs.resourceId, filters.resourceId));
+  }
+  if (filters.status) {
+    conditions.push(eq7(auditLogs.status, filters.status));
+  }
+  if (filters.riskLevel) {
+    if (Array.isArray(filters.riskLevel)) {
+      conditions.push(inArray2(auditLogs.riskLevel, filters.riskLevel));
+    } else {
+      conditions.push(eq7(auditLogs.riskLevel, filters.riskLevel));
+    }
+  }
+  if (filters.isSuspicious !== void 0) {
+    conditions.push(eq7(auditLogs.isSuspicious, filters.isSuspicious));
+  }
+  if (filters.startDate) {
+    conditions.push(gte3(auditLogs.createdAt, filters.startDate));
+  }
+  if (filters.endDate) {
+    conditions.push(lte3(auditLogs.createdAt, filters.endDate));
+  }
+  if (filters.search) {
+    conditions.push(
+      or2(
+        like3(auditLogs.description, `%${filters.search}%`),
+        like3(auditLogs.resourceName, `%${filters.search}%`),
+        like3(auditLogs.userEmail, `%${filters.search}%`)
+      )
+    );
+  }
+  const whereClause = conditions.length > 0 ? and4(...conditions) : void 0;
+  const [countResult] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(whereClause);
+  const offset = (pagination.page - 1) * pagination.limit;
+  const logs = await db.select().from(auditLogs).where(whereClause).orderBy(desc7(auditLogs.createdAt)).limit(pagination.limit).offset(offset);
+  return {
+    logs,
+    total: countResult.count,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages: Math.ceil(countResult.count / pagination.limit)
+  };
+}
+async function getAuditLogById(id) {
+  const db = await getDb();
+  if (!db) return null;
+  const [log] = await db.select().from(auditLogs).where(eq7(auditLogs.id, id)).limit(1);
+  return log || null;
+}
+async function getAuditLogStats(teamId, days = 30) {
+  const db = await getDb();
+  if (!db) return null;
+  const startDate = /* @__PURE__ */ new Date();
+  startDate.setDate(startDate.getDate() - days);
+  const conditions = [gte3(auditLogs.createdAt, startDate)];
+  if (teamId) {
+    conditions.push(eq7(auditLogs.teamId, teamId));
+  }
+  const [totalEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions));
+  const eventsByAction = await db.select({
+    action: auditLogs.action,
+    count: sql3`count(*)`
+  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.action).orderBy(desc7(sql3`count(*)`));
+  const eventsByRisk = await db.select({
+    riskLevel: auditLogs.riskLevel,
+    count: sql3`count(*)`
+  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.riskLevel);
+  const [suspiciousEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions, eq7(auditLogs.isSuspicious, true)));
+  const [failedEvents] = await db.select({ count: sql3`count(*)` }).from(auditLogs).where(and4(...conditions, eq7(auditLogs.status, "failure")));
+  const activeUsers = await db.select({
+    userId: auditLogs.userId,
+    userEmail: auditLogs.userEmail,
+    count: sql3`count(*)`
+  }).from(auditLogs).where(and4(...conditions)).groupBy(auditLogs.userId, auditLogs.userEmail).orderBy(desc7(sql3`count(*)`)).limit(10);
+  const eventsByDay = await db.select({
+    date: sql3`DATE(createdAt)`,
+    count: sql3`count(*)`
+  }).from(auditLogs).where(and4(...conditions)).groupBy(sql3`DATE(createdAt)`).orderBy(sql3`DATE(createdAt)`);
+  return {
+    totalEvents: totalEvents.count,
+    eventsByAction,
+    eventsByRisk,
+    suspiciousEvents: suspiciousEvents.count,
+    failedEvents: failedEvents.count,
+    activeUsers,
+    eventsByDay,
+    period: { startDate, endDate: /* @__PURE__ */ new Date() }
+  };
+}
+async function createAuditLogPolicy(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [policy] = await db.insert(auditLogPolicies).values({
+    teamId: data.teamId,
+    name: data.name,
+    description: data.description,
+    actionTypes: data.actionTypes,
+    resourceTypes: data.resourceTypes,
+    riskLevels: data.riskLevels,
+    retentionDays: data.retentionDays || 90,
+    archiveEnabled: data.archiveEnabled || false,
+    archiveLocation: data.archiveLocation
+  }).$returningId();
+  return policy;
+}
+async function getAuditLogPolicies(teamId) {
+  const db = await getDb();
+  if (!db) return [];
+  if (teamId) {
+    return db.select().from(auditLogPolicies).where(or2(eq7(auditLogPolicies.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc7(auditLogPolicies.createdAt));
+  }
+  return db.select().from(auditLogPolicies).orderBy(desc7(auditLogPolicies.createdAt));
+}
+async function createAuditLogAlert(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [alert] = await db.insert(auditLogAlerts).values({
+    teamId: data.teamId,
+    name: data.name,
+    description: data.description,
+    triggerConditions: data.triggerConditions,
+    notifyEmail: data.notifyEmail ?? true,
+    notifySlack: data.notifySlack ?? false,
+    notifyWebhook: data.notifyWebhook ?? false,
+    webhookUrl: data.webhookUrl,
+    severity: data.severity || "warning",
+    cooldownMinutes: data.cooldownMinutes || 15
+  }).$returningId();
+  return alert;
+}
+async function getAuditLogAlerts(teamId) {
+  const db = await getDb();
+  if (!db) return [];
+  if (teamId) {
+    return db.select().from(auditLogAlerts).where(or2(eq7(auditLogAlerts.teamId, teamId), sql3`teamId IS NULL`)).orderBy(desc7(auditLogAlerts.createdAt));
+  }
+  return db.select().from(auditLogAlerts).orderBy(desc7(auditLogAlerts.createdAt));
+}
+async function checkAndTriggerAlerts(logId, context, data, riskLevel) {
+  const db = await getDb();
+  if (!db) return;
+  const alerts = await getAuditLogAlerts(context.teamId);
+  for (const alert of alerts) {
+    if (!alert.isActive) continue;
+    if (alert.lastTriggeredAt) {
+      const cooldownEnd = new Date(alert.lastTriggeredAt);
+      cooldownEnd.setMinutes(cooldownEnd.getMinutes() + alert.cooldownMinutes);
+      if (/* @__PURE__ */ new Date() < cooldownEnd) continue;
+    }
+    const conditions = alert.triggerConditions;
+    let shouldTrigger = false;
+    if (conditions.actions && Array.isArray(conditions.actions)) {
+      if (conditions.actions.includes(data.action)) shouldTrigger = true;
+    }
+    if (conditions.riskLevels && Array.isArray(conditions.riskLevels)) {
+      if (conditions.riskLevels.includes(riskLevel)) shouldTrigger = true;
+    }
+    if (conditions.suspiciousOnly && data.status === "failure") {
+      shouldTrigger = true;
+    }
+    if (shouldTrigger) {
+      await db.update(auditLogAlerts).set({
+        lastTriggeredAt: /* @__PURE__ */ new Date(),
+        triggerCount: sql3`triggerCount + 1`
+      }).where(eq7(auditLogAlerts.id, alert.id));
+      console.log(`[AuditAlert] Triggered: ${alert.name} for log ${logId}`);
+    }
+  }
+}
+async function saveAuditLogQuery(data) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [query] = await db.insert(auditLogSavedQueries).values({
+    userId: data.userId,
+    teamId: data.teamId,
+    name: data.name,
+    description: data.description,
+    filters: data.filters,
+    columns: data.columns,
+    sortBy: data.sortBy,
+    sortOrder: data.sortOrder || "desc",
+    isShared: data.isShared || false
+  }).$returningId();
+  return query;
+}
+async function getSavedQueries(userId, teamId) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    or2(
+      eq7(auditLogSavedQueries.userId, userId),
+      and4(eq7(auditLogSavedQueries.isShared, true), teamId ? eq7(auditLogSavedQueries.teamId, teamId) : sql3`1=1`)
+    )
+  ];
+  return db.select().from(auditLogSavedQueries).where(and4(...conditions)).orderBy(desc7(auditLogSavedQueries.createdAt));
+}
+async function deleteSavedQuery(queryId, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(auditLogSavedQueries).where(and4(eq7(auditLogSavedQueries.id, queryId), eq7(auditLogSavedQueries.userId, userId)));
+}
+async function getUserSessions(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(userSessions).where(and4(eq7(userSessions.userId, userId), eq7(userSessions.isActive, true))).orderBy(desc7(userSessions.lastActivityAt));
+}
+async function invalidateSession(sessionId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(userSessions).set({ isActive: false }).where(eq7(userSessions.sessionId, sessionId));
+}
+async function invalidateAllUserSessions(userId, exceptSessionId) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = [eq7(userSessions.userId, userId)];
+  if (exceptSessionId) {
+    conditions.push(sql3`sessionId != ${exceptSessionId}`);
+  }
+  await db.update(userSessions).set({ isActive: false }).where(and4(...conditions));
+}
+async function exportAuditLogs(filters, format = "json") {
+  const { logs } = await getAuditLogs(filters, { page: 1, limit: 1e4 });
+  if (format === "csv") {
+    const headers = [
+      "ID",
+      "Timestamp",
+      "User Email",
+      "Action",
+      "Resource Type",
+      "Resource ID",
+      "Resource Name",
+      "Description",
+      "Status",
+      "Risk Level",
+      "IP Address"
+    ];
+    const rows = logs.map((log) => [
+      log.id,
+      log.createdAt.toISOString(),
+      log.userEmail || "",
+      log.action,
+      log.resourceType || "",
+      log.resourceId || "",
+      log.resourceName || "",
+      log.description.replace(/"/g, '""'),
+      log.status,
+      log.riskLevel,
+      log.ipAddress || ""
+    ]);
+    return [headers.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join("\n");
+  }
+  return JSON.stringify(logs, null, 2);
+}
+async function detectAnomalies(teamId, days = 7) {
+  const db = await getDb();
+  if (!db) return null;
+  const stats = await getAuditLogStats(teamId, days);
+  if (!stats) return null;
+  const recentLogs = await getAuditLogs(
+    { teamId, startDate: new Date(Date.now() - days * 24 * 60 * 60 * 1e3) },
+    { page: 1, limit: 500 }
+  );
+  try {
+    const response = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content: `You are a security analyst AI. Analyze audit logs and detect potential anomalies, security threats, or unusual patterns. Be specific and actionable in your findings.`
+        },
+        {
+          role: "user",
+          content: `Analyze these audit log statistics and recent events for anomalies:
+
+Statistics (last ${days} days):
+- Total events: ${stats.totalEvents}
+- Suspicious events: ${stats.suspiciousEvents}
+- Failed events: ${stats.failedEvents}
+
+Events by risk level:
+${stats.eventsByRisk.map((r) => `- ${r.riskLevel}: ${r.count}`).join("\n")}
+
+Most active users:
+${stats.activeUsers.map((u) => `- ${u.userEmail}: ${u.count} events`).join("\n")}
+
+Recent suspicious/high-risk events:
+${recentLogs.logs.filter((l) => l.isSuspicious || l.riskLevel === "high" || l.riskLevel === "critical").slice(0, 20).map((l) => `- [${l.riskLevel}] ${l.action}: ${l.description}`).join("\n")}
+
+Identify:
+1. Potential security threats
+2. Unusual activity patterns
+3. Recommended actions
+4. Risk score (0-100)`
+        }
+      ]
+    });
+    const content = response.choices[0]?.message?.content || "";
+    return {
+      analysis: content,
+      stats,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  } catch (error) {
+    console.error("Failed to detect anomalies:", error);
+    return null;
+  }
+}
+
+// server/routers/teams.ts
+var teamsRouter = router({
+  // Create a new team
+  create: protectedProcedure.input(
+    z18.object({
+      name: z18.string().min(1).max(255),
+      slug: z18.string().min(1).max(100).optional(),
+      description: z18.string().optional(),
+      parentTeamId: z18.number().optional(),
+      logoUrl: z18.string().url().optional(),
+      primaryColor: z18.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      maxMembers: z18.number().min(1).max(1e3).optional(),
+      maxApplications: z18.number().min(1).max(100).optional(),
+      maxClusters: z18.number().min(1).max(50).optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const team = await createTeam({
+      ...input,
+      ownerId: ctx.user.id
+    });
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0
+      },
+      {
+        action: "team_create",
+        resourceType: "team",
+        resourceId: String(team.id),
+        resourceName: input.name,
+        description: `Created team "${input.name}"`,
+        newState: input
+      }
+    );
+    return team;
+  }),
+  // Get team by ID
+  get: protectedProcedure.input(z18.object({ teamId: z18.number() })).query(async ({ input }) => {
+    return getTeam(input.teamId);
+  }),
+  // Get team by slug
+  getBySlug: protectedProcedure.input(z18.object({ slug: z18.string() })).query(async ({ input }) => {
+    return getTeamBySlug(input.slug);
+  }),
+  // Get user's teams
+  getUserTeams: protectedProcedure.query(async ({ ctx }) => {
+    return getUserTeams(ctx.user.id);
+  }),
+  // Update team
+  update: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      name: z18.string().min(1).max(255).optional(),
+      description: z18.string().optional(),
+      logoUrl: z18.string().url().optional(),
+      primaryColor: z18.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      maxMembers: z18.number().min(1).max(1e3).optional(),
+      maxApplications: z18.number().min(1).max(100).optional(),
+      maxClusters: z18.number().min(1).max(50).optional(),
+      billingEmail: z18.string().email().optional(),
+      isActive: z18.boolean().optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const { teamId, ...data } = input;
+    const role = await getUserTeamRole(teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    const previousTeam = await getTeam(teamId);
+    const team = await updateTeam(teamId, data);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId
+      },
+      {
+        action: "team_update",
+        resourceType: "team",
+        resourceId: String(teamId),
+        resourceName: team?.name,
+        description: `Updated team settings`,
+        previousState: previousTeam,
+        newState: team
+      }
+    );
+    return team;
+  }),
+  // Delete team
+  delete: protectedProcedure.input(z18.object({ teamId: z18.number() })).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner") {
+      throw new Error("Only team owner can delete the team");
+    }
+    const team = await getTeam(input.teamId);
+    await deleteTeam(input.teamId);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0
+      },
+      {
+        action: "team_delete",
+        resourceType: "team",
+        resourceId: String(input.teamId),
+        resourceName: team?.name,
+        description: `Deleted team "${team?.name}"`
+      }
+    );
+    return { success: true };
+  }),
+  // Get team members
+  getMembers: protectedProcedure.input(z18.object({ teamId: z18.number() })).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (!role) {
+      throw new Error("Not a team member");
+    }
+    return getTeamMembers(input.teamId);
+  }),
+  // Add team member
+  addMember: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      userId: z18.number(),
+      role: z18.enum(["admin", "member", "viewer"]).optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    const member = await addTeamMember({
+      teamId: input.teamId,
+      userId: input.userId,
+      role: input.role,
+      invitedBy: ctx.user.id
+    });
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: input.teamId
+      },
+      {
+        action: "member_invite",
+        resourceType: "team_member",
+        resourceId: String(input.userId),
+        description: `Added user ${input.userId} to team with role ${input.role || "member"}`,
+        newState: { userId: input.userId, role: input.role || "member" }
+      }
+    );
+    return member;
+  }),
+  // Update member role
+  updateMemberRole: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      userId: z18.number(),
+      role: z18.enum(["admin", "member", "viewer"])
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const currentRole = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (currentRole !== "owner" && currentRole !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    const previousRole = await getUserTeamRole(input.teamId, input.userId);
+    await updateTeamMemberRole(input.teamId, input.userId, input.role);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: input.teamId
+      },
+      {
+        action: "member_role_change",
+        resourceType: "team_member",
+        resourceId: String(input.userId),
+        description: `Changed user ${input.userId} role from ${previousRole} to ${input.role}`,
+        previousState: { role: previousRole },
+        newState: { role: input.role }
+      }
+    );
+    return { success: true };
+  }),
+  // Remove member
+  removeMember: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      userId: z18.number()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const currentRole = await getUserTeamRole(input.teamId, ctx.user.id);
+    const isSelf = ctx.user.id === input.userId;
+    if (!isSelf && currentRole !== "owner" && currentRole !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    await removeTeamMember(input.teamId, input.userId);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: input.teamId
+      },
+      {
+        action: "member_remove",
+        resourceType: "team_member",
+        resourceId: String(input.userId),
+        description: isSelf ? "Left the team" : `Removed user ${input.userId} from team`
+      }
+    );
+    return { success: true };
+  }),
+  // Create invitation
+  createInvitation: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      email: z18.string().email(),
+      role: z18.enum(["admin", "member", "viewer"]).optional(),
+      personalMessage: z18.string().max(500).optional(),
+      expiresInDays: z18.number().min(1).max(30).optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    const invitation = await createTeamInvitation({
+      teamId: input.teamId,
+      email: input.email,
+      role: input.role,
+      invitedBy: ctx.user.id,
+      personalMessage: input.personalMessage,
+      expiresInDays: input.expiresInDays
+    });
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: input.teamId
+      },
+      {
+        action: "member_invite",
+        resourceType: "team_invitation",
+        resourceId: String(invitation.id),
+        description: `Sent invitation to ${input.email}`,
+        newState: { email: input.email, role: input.role || "member" }
+      }
+    );
+    return invitation;
+  }),
+  // Get team invitations
+  getInvitations: protectedProcedure.input(z18.object({ teamId: z18.number() })).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    return getTeamInvitations(input.teamId);
+  }),
+  // Accept invitation
+  acceptInvitation: protectedProcedure.input(z18.object({ token: z18.string() })).mutation(async ({ ctx, input }) => {
+    const invitation = await acceptInvitation(input.token, ctx.user.id);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: invitation.teamId
+      },
+      {
+        action: "member_invite",
+        resourceType: "team_invitation",
+        resourceId: String(invitation.id),
+        description: "Accepted team invitation"
+      }
+    );
+    return { success: true, teamId: invitation.teamId };
+  }),
+  // Decline invitation
+  declineInvitation: publicProcedure.input(z18.object({ token: z18.string() })).mutation(async ({ input }) => {
+    await declineInvitation(input.token);
+    return { success: true };
+  }),
+  // Cancel invitation
+  cancelInvitation: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      invitationId: z18.number()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    await cancelInvitation(input.invitationId);
+    return { success: true };
+  }),
+  // Get team resources
+  getResources: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      resourceType: z18.string().optional()
+    })
+  ).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (!role) {
+      throw new Error("Not a team member");
+    }
+    return getTeamResources(input.teamId, input.resourceType);
+  }),
+  // Add resource to team
+  addResource: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      resourceType: z18.enum([
+        "application",
+        "cluster",
+        "connection",
+        "autoscaling_rule",
+        "scheduled_scaling",
+        "ab_test",
+        "canary_deployment",
+        "prometheus_config",
+        "email_config"
+      ]),
+      resourceId: z18.number(),
+      accessLevel: z18.enum(["full", "read_write", "read_only"]).optional(),
+      notes: z18.string().optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    const resource = await addTeamResource({
+      teamId: input.teamId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      accessLevel: input.accessLevel,
+      addedBy: ctx.user.id,
+      notes: input.notes
+    });
+    return resource;
+  }),
+  // Remove resource from team
+  removeResource: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      resourceType: z18.string(),
+      resourceId: z18.number()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    await removeTeamResource(input.teamId, input.resourceType, input.resourceId);
+    return { success: true };
+  }),
+  // Get team activity
+  getActivity: protectedProcedure.input(
+    z18.object({
+      teamId: z18.number(),
+      limit: z18.number().min(1).max(100).optional()
+    })
+  ).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (!role) {
+      throw new Error("Not a team member");
+    }
+    return getTeamActivity(input.teamId, input.limit);
+  }),
+  // Get team statistics
+  getStats: protectedProcedure.input(z18.object({ teamId: z18.number() })).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (!role) {
+      throw new Error("Not a team member");
+    }
+    return getTeamStats(input.teamId);
+  }),
+  // Get AI-powered team insights
+  getInsights: protectedProcedure.input(z18.object({ teamId: z18.number() })).query(async ({ ctx, input }) => {
+    const role = await getUserTeamRole(input.teamId, ctx.user.id);
+    if (role !== "owner" && role !== "admin") {
+      throw new Error("Insufficient permissions");
+    }
+    return getTeamInsights(input.teamId);
+  }),
+  // Check resource access
+  checkAccess: protectedProcedure.input(
+    z18.object({
+      resourceType: z18.string(),
+      resourceId: z18.number()
+    })
+  ).query(async ({ ctx, input }) => {
+    return checkResourceAccess(ctx.user.id, input.resourceType, input.resourceId);
+  })
+});
+
+// server/routers/auditLog.ts
+import { z as z19 } from "zod";
+var auditActionEnum = z19.enum([
+  "login",
+  "logout",
+  "login_failed",
+  "password_changed",
+  "mfa_enabled",
+  "mfa_disabled",
+  "create",
+  "read",
+  "update",
+  "delete",
+  "deploy",
+  "rollback",
+  "scale",
+  "restart",
+  "stop",
+  "start",
+  "team_create",
+  "team_update",
+  "team_delete",
+  "member_invite",
+  "member_remove",
+  "member_role_change",
+  "config_change",
+  "secret_access",
+  "secret_update",
+  "ai_query",
+  "ai_recommendation_applied",
+  "export",
+  "import",
+  "admin_action",
+  "system_config_change"
+]);
+var riskLevelEnum = z19.enum(["low", "medium", "high", "critical"]);
+var auditLogRouter = router({
+  // Get audit logs with filters
+  getLogs: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      userId: z19.number().optional(),
+      action: z19.union([auditActionEnum, z19.array(auditActionEnum)]).optional(),
+      resourceType: z19.string().optional(),
+      resourceId: z19.string().optional(),
+      status: z19.enum(["success", "failure", "partial"]).optional(),
+      riskLevel: z19.union([riskLevelEnum, z19.array(riskLevelEnum)]).optional(),
+      isSuspicious: z19.boolean().optional(),
+      startDate: z19.string().datetime().optional(),
+      endDate: z19.string().datetime().optional(),
+      search: z19.string().optional(),
+      page: z19.number().min(1).default(1),
+      limit: z19.number().min(1).max(100).default(50)
+    })
+  ).query(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (!role) {
+        throw new Error("Not a team member");
+      }
+    }
+    const filters = {
+      ...input,
+      startDate: input.startDate ? new Date(input.startDate) : void 0,
+      endDate: input.endDate ? new Date(input.endDate) : void 0
+    };
+    if (ctx.user.role !== "admin" && !input.teamId) {
+      filters.userId = ctx.user.id;
+    }
+    return getAuditLogs(filters, {
+      page: input.page,
+      limit: input.limit
+    });
+  }),
+  // Get single audit log
+  getById: protectedProcedure.input(z19.object({ id: z19.number() })).query(async ({ ctx, input }) => {
+    const log = await getAuditLogById(input.id);
+    if (!log) {
+      throw new Error("Audit log not found");
+    }
+    if (ctx.user.role !== "admin") {
+      if (log.userId !== ctx.user.id) {
+        if (log.teamId) {
+          const role = await getUserTeamRole(log.teamId, ctx.user.id);
+          if (!role) {
+            throw new Error("Access denied");
+          }
+        } else {
+          throw new Error("Access denied");
+        }
+      }
+    }
+    return log;
+  }),
+  // Get audit log statistics
+  getStats: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      days: z19.number().min(1).max(365).default(30)
+    })
+  ).query(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (!role) {
+        throw new Error("Not a team member");
+      }
+    }
+    return getAuditLogStats(input.teamId, input.days);
+  }),
+  // Export audit logs
+  export: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      format: z19.enum(["json", "csv"]).default("json"),
+      startDate: z19.string().datetime().optional(),
+      endDate: z19.string().datetime().optional(),
+      action: z19.union([auditActionEnum, z19.array(auditActionEnum)]).optional(),
+      riskLevel: z19.union([riskLevelEnum, z19.array(riskLevelEnum)]).optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner" && role !== "admin") {
+        throw new Error("Insufficient permissions to export logs");
+      }
+    } else if (ctx.user.role !== "admin") {
+      throw new Error("Admin access required to export all logs");
+    }
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0,
+        teamId: input.teamId
+      },
+      {
+        action: "export",
+        resourceType: "audit_logs",
+        description: `Exported audit logs in ${input.format} format`,
+        metadata: input
+      }
+    );
+    const filters = {
+      teamId: input.teamId,
+      startDate: input.startDate ? new Date(input.startDate) : void 0,
+      endDate: input.endDate ? new Date(input.endDate) : void 0,
+      action: input.action,
+      riskLevel: input.riskLevel
+    };
+    return exportAuditLogs(filters, input.format);
+  }),
+  // Detect anomalies using AI
+  detectAnomalies: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      days: z19.number().min(1).max(30).default(7)
+    })
+  ).query(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner" && role !== "admin") {
+        throw new Error("Insufficient permissions");
+      }
+    } else if (ctx.user.role !== "admin") {
+      throw new Error("Admin access required");
+    }
+    return detectAnomalies(input.teamId, input.days);
+  }),
+  // ============================================
+  // POLICIES
+  // ============================================
+  // Create retention policy
+  createPolicy: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      name: z19.string().min(1).max(255),
+      description: z19.string().optional(),
+      actionTypes: z19.array(auditActionEnum).optional(),
+      resourceTypes: z19.array(z19.string()).optional(),
+      riskLevels: z19.array(riskLevelEnum).optional(),
+      retentionDays: z19.number().min(1).max(3650).default(90),
+      archiveEnabled: z19.boolean().default(false),
+      archiveLocation: z19.string().optional()
+    })
+  ).mutation(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner") {
+        throw new Error("Only team owner can create policies");
+      }
+    } else if (ctx.user.role !== "admin") {
+      throw new Error("Admin access required");
+    }
+    return createAuditLogPolicy(input);
+  }),
+  // Get policies
+  getPolicies: protectedProcedure.input(z19.object({ teamId: z19.number().optional() })).query(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner" && role !== "admin") {
+        throw new Error("Insufficient permissions");
+      }
+    }
+    return getAuditLogPolicies(input.teamId);
+  }),
+  // ============================================
+  // ALERTS
+  // ============================================
+  // Create alert
+  createAlert: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      name: z19.string().min(1).max(255),
+      description: z19.string().optional(),
+      triggerConditions: z19.record(z19.string(), z19.unknown()),
+      notifyEmail: z19.boolean().default(true),
+      notifySlack: z19.boolean().default(false),
+      notifyWebhook: z19.boolean().default(false),
+      webhookUrl: z19.string().url().optional(),
+      severity: z19.enum(["info", "warning", "critical"]).default("warning"),
+      cooldownMinutes: z19.number().min(1).max(1440).default(15)
+    })
+  ).mutation(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner" && role !== "admin") {
+        throw new Error("Insufficient permissions");
+      }
+    } else if (ctx.user.role !== "admin") {
+      throw new Error("Admin access required");
+    }
+    return createAuditLogAlert(input);
+  }),
+  // Get alerts
+  getAlerts: protectedProcedure.input(z19.object({ teamId: z19.number().optional() })).query(async ({ ctx, input }) => {
+    if (input.teamId) {
+      const role = await getUserTeamRole(input.teamId, ctx.user.id);
+      if (role !== "owner" && role !== "admin") {
+        throw new Error("Insufficient permissions");
+      }
+    }
+    return getAuditLogAlerts(input.teamId);
+  }),
+  // ============================================
+  // SAVED QUERIES
+  // ============================================
+  // Save query
+  saveQuery: protectedProcedure.input(
+    z19.object({
+      teamId: z19.number().optional(),
+      name: z19.string().min(1).max(255),
+      description: z19.string().optional(),
+      filters: z19.record(z19.string(), z19.unknown()),
+      columns: z19.array(z19.string()).optional(),
+      sortBy: z19.string().optional(),
+      sortOrder: z19.enum(["asc", "desc"]).optional(),
+      isShared: z19.boolean().default(false)
+    })
+  ).mutation(async ({ ctx, input }) => {
+    return saveAuditLogQuery({
+      userId: ctx.user.id,
+      teamId: input.teamId,
+      name: input.name,
+      description: input.description,
+      filters: input.filters,
+      columns: input.columns,
+      sortBy: input.sortBy,
+      sortOrder: input.sortOrder,
+      isShared: input.isShared
+    });
+  }),
+  // Get saved queries
+  getSavedQueries: protectedProcedure.input(z19.object({ teamId: z19.number().optional() })).query(async ({ ctx, input }) => {
+    return getSavedQueries(ctx.user.id, input.teamId);
+  }),
+  // Delete saved query
+  deleteSavedQuery: protectedProcedure.input(z19.object({ queryId: z19.number() })).mutation(async ({ ctx, input }) => {
+    await deleteSavedQuery(input.queryId, ctx.user.id);
+    return { success: true };
+  }),
+  // ============================================
+  // USER SESSIONS
+  // ============================================
+  // Get user sessions
+  getSessions: protectedProcedure.query(async ({ ctx }) => {
+    return getUserSessions(ctx.user.id);
+  }),
+  // Invalidate session
+  invalidateSession: protectedProcedure.input(z19.object({ sessionId: z19.string() })).mutation(async ({ ctx, input }) => {
+    await invalidateSession(input.sessionId);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0
+      },
+      {
+        action: "logout",
+        description: "Invalidated session",
+        metadata: { sessionId: input.sessionId }
+      }
+    );
+    return { success: true };
+  }),
+  // Invalidate all sessions
+  invalidateAllSessions: protectedProcedure.input(z19.object({ exceptCurrent: z19.boolean().default(true) })).mutation(async ({ ctx, input }) => {
+    await invalidateAllUserSessions(ctx.user.id, void 0);
+    await createAuditLog(
+      {
+        userId: ctx.user.id,
+        userEmail: ctx.user.email || void 0,
+        userName: ctx.user.name || void 0
+      },
+      {
+        action: "logout",
+        description: "Invalidated all sessions"
+      }
+    );
+    return { success: true };
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -9865,7 +11633,9 @@ var appRouter = router({
   canary: canaryRouter,
   argocd: argoCDRouter,
   chatbot: chatBotRouter,
-  bluegreen: blueGreenRouter
+  bluegreen: blueGreenRouter,
+  teams: teamsRouter,
+  auditLog: auditLogRouter
 });
 
 // server/_core/context.ts
