@@ -53,9 +53,9 @@ export default function AuditLog() {
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [actionFilter, setActionFilter] = useState<string>("");
-  const [riskFilter, setRiskFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [riskFilter, setRiskFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
 
@@ -64,9 +64,9 @@ export default function AuditLog() {
     page,
     limit: 20,
     search: search || undefined,
-    action: actionFilter ? (actionFilter as any) : undefined,
-    riskLevel: riskFilter ? (riskFilter as any) : undefined,
-    status: statusFilter ? (statusFilter as any) : undefined,
+    action: actionFilter && actionFilter !== 'all' ? (actionFilter as any) : undefined,
+    riskLevel: riskFilter && riskFilter !== 'all' ? (riskFilter as any) : undefined,
+    status: statusFilter && statusFilter !== 'all' ? (statusFilter as any) : undefined,
   });
 
   const { data: stats } = trpc.auditLog.getStats.useQuery({ days: 30 });
@@ -231,7 +231,7 @@ export default function AuditLog() {
                       <SelectValue placeholder="All Actions" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Actions</SelectItem>
+                      <SelectItem value="all">All Actions</SelectItem>
                       <SelectItem value="login">Login</SelectItem>
                       <SelectItem value="logout">Logout</SelectItem>
                       <SelectItem value="create">Create</SelectItem>
@@ -249,7 +249,7 @@ export default function AuditLog() {
                       <SelectValue placeholder="All Risks" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Risks</SelectItem>
+                      <SelectItem value="all">All Risks</SelectItem>
                       <SelectItem value="low">Low</SelectItem>
                       <SelectItem value="medium">Medium</SelectItem>
                       <SelectItem value="high">High</SelectItem>
@@ -261,7 +261,7 @@ export default function AuditLog() {
                       <SelectValue placeholder="All Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Status</SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
                       <SelectItem value="success">Success</SelectItem>
                       <SelectItem value="failure">Failure</SelectItem>
                       <SelectItem value="partial">Partial</SelectItem>

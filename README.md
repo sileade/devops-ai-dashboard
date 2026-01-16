@@ -26,7 +26,7 @@ A comprehensive DevOps management platform with AI-powered automation, real-time
 
 | Feature | Description |
 |---------|-------------|
-| **Docker Management** | Full container lifecycle management with real-time stats, logs, and network/volume control |
+| **Docker & Podman** | Full container lifecycle management with real-time stats, logs, and network/volume control (rootless support) |
 | **Kubernetes Integration** | Pod, Deployment, Service management with namespace switching and resource monitoring |
 | **Podman Support** | Rootless container management with pod orchestration |
 | **Ansible Automation** | Playbook browser, execution interface, and inventory management |
@@ -187,6 +187,9 @@ VITE_APP_ID=your-app-id
 # Optional: Docker
 DOCKER_HOST=unix:///var/run/docker.sock
 
+# Optional: Podman (rootless)
+PODMAN_SOCKET_PATH=/run/user/1000/podman/podman.sock
+
 # Optional: Kubernetes
 KUBECONFIG=/path/to/kubeconfig
 
@@ -209,7 +212,7 @@ DISCORD_BOT_TOKEN=...
 curl -fsSL https://raw.githubusercontent.com/sileade/devops-ai-dashboard/main/scripts/install.sh | bash
 ```
 
-### Docker Compose
+### Docker Compose / Podman Compose
 
 ```bash
 # Clone repository
@@ -220,8 +223,11 @@ cd devops-ai-dashboard
 cp .env.example .env
 # Edit .env with your settings
 
-# Start all services
+# Start all services with Docker
 docker compose up -d
+
+# Or with Podman
+podman-compose up -d
 
 # With monitoring stack (Prometheus + Grafana)
 docker compose --profile monitoring up -d
