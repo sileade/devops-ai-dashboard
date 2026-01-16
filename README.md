@@ -252,6 +252,124 @@ The project includes 64+ tests covering:
 - Chat history persistence
 - AI assistant functionality
 
+## Performance Monitoring
+
+### Lighthouse CI
+
+Automated performance auditing is integrated into the CI/CD pipeline using Lighthouse CI.
+
+**Local Usage:**
+```bash
+# Run Lighthouse audit locally
+npx lhci autorun
+
+# Run against specific URL
+npx lhci collect --url=http://localhost:3000
+```
+
+**Performance Budgets:**
+| Metric | Target | Threshold |
+|--------|--------|----------|
+| LCP (Largest Contentful Paint) | < 2.5s | Warning |
+| FCP (First Contentful Paint) | < 1.8s | Warning |
+| CLS (Cumulative Layout Shift) | < 0.1 | Error |
+| TBI (Total Blocking Time) | < 300ms | Warning |
+| Performance Score | > 80% | Warning |
+| Accessibility Score | > 90% | Error |
+
+**Configuration:** See `lighthouserc.js` for full configuration.
+
+### Sentry Error Tracking
+
+Production error monitoring is handled by Sentry.
+
+**Setup:**
+1. Create a Sentry project at [sentry.io](https://sentry.io)
+2. Add environment variables:
+   ```bash
+   # Server-side
+   SENTRY_DSN=https://xxx@sentry.io/xxx
+   SENTRY_ENVIRONMENT=production
+   
+   # Client-side
+   VITE_SENTRY_DSN=https://xxx@sentry.io/xxx
+   VITE_SENTRY_ENVIRONMENT=production
+   ```
+
+**Features:**
+- Automatic error capture with stack traces
+- Performance monitoring and tracing
+- Session replay for debugging
+- Source map integration
+- Custom error context and tags
+
+**Usage in Code:**
+```typescript
+// Server-side
+import { captureException, addBreadcrumb } from './server/sentry';
+
+try {
+  // risky operation
+} catch (error) {
+  captureException(error, { userId: user.id });
+}
+
+// Client-side
+import { captureException } from '@/lib/sentry';
+```
+
+### Load Testing with k6
+
+Performance and load testing using k6.
+
+**Install k6:**
+```bash
+# macOS
+brew install k6
+
+# Ubuntu/Debian
+sudo gpg -k
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+  --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
+  sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update && sudo apt-get install k6
+
+# Docker
+docker run -i grafana/k6 run - <k6/load-test.js
+```
+
+**Running Tests:**
+```bash
+# Standard load test
+k6 run k6/load-test.js
+
+# Stress test (find breaking point)
+k6 run k6/stress-test.js
+
+# Spike test (sudden traffic bursts)
+k6 run k6/spike-test.js
+
+# Custom parameters
+k6 run --vus 50 --duration 5m k6/load-test.js
+
+# Against staging/production
+k6 run -e BASE_URL=https://staging.example.com k6/load-test.js
+```
+
+**Test Types:**
+| Type | Purpose | VUs | Duration |
+|------|---------|-----|----------|
+| Load | Normal traffic simulation | 10-100 | 14 min |
+| Stress | Find breaking point | 50-300 | 28 min |
+| Spike | Sudden traffic bursts | 10-500 | 5 min |
+
+**Performance Thresholds:**
+- 95% of requests < 500ms
+- 99% of requests < 1000ms
+- Error rate < 1%
+- Checks pass rate > 95%
+
 ## Code Quality
 
 The codebase follows best practices:

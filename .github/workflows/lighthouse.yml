@@ -1,0 +1,200 @@
+name: Lighthouse CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to audit (optional, uses default URLs if empty)'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lighthouse:
+    name: Lighthouse Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Run Lighthouse CI
+        run: |
+          npm install -g @lhci/cli
+          lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+          retention-days: 30
+
+      - name: Comment PR with Lighthouse results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const resultsDir = '.lighthouseci';
+            if (!fs.existsSync(resultsDir)) {
+              console.log('No Lighthouse results found');
+              return;
+            }
+            
+            const files = fs.readdirSync(resultsDir).filter(f => f.endsWith('.json') && f.startsWith('lhr-'));
+            if (files.length === 0) {
+              console.log('No Lighthouse report files found');
+              return;
+            }
+            
+            let comment = '## 🔦 Lighthouse Results\n\n';
+            comment += '| URL | Performance | Accessibility | Best Practices | SEO |\n';
+            comment += '|-----|-------------|---------------|----------------|-----|\n';
+            
+            for (const file of files) {
+              try {
+                const report = JSON.parse(fs.readFileSync(path.join(resultsDir, file), 'utf8'));
+                const url = new URL(report.finalUrl).pathname || '/';
+                const perf = Math.round(report.categories.performance.score * 100);
+                const a11y = Math.round(report.categories.accessibility.score * 100);
+                const bp = Math.round(report.categories['best-practices'].score * 100);
+                const seo = Math.round(report.categories.seo.score * 100);
+                
+                const getEmoji = (score) => score >= 90 ? '🟢' : score >= 50 ? '🟡' : '🔴';
+                
+                comment += `| ${url} | ${getEmoji(perf)} ${perf} | ${getEmoji(a11y)} ${a11y} | ${getEmoji(bp)} ${bp} | ${getEmoji(seo)} ${seo} |\n`;
+              } catch (e) {
+                console.error(`Error parsing ${file}:`, e.message);
+              }
+            }
+            
+            comment += '\n\n<details><summary>Score Legend</summary>\n\n';
+            comment += '- 🟢 90-100: Good\n';
+            comment += '- 🟡 50-89: Needs Improvement\n';
+            comment += '- 🔴 0-49: Poor\n';
+            comment += '</details>';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  lighthouse-budget-check:
+    name: Performance Budget Check
+    runs-on: ubuntu-latest
+    needs: lighthouse
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Download Lighthouse results
+        uses: actions/download-artifact@v4
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+
+      - name: Check performance budgets
+        run: |
+          echo "Checking performance budgets..."
+          
+          # Parse results and check against budgets
+          for file in .lighthouseci/lhr-*.json; do
+            if [ -f "$file" ]; then
+              echo "Checking $file..."
+              
+              # Extract scores using jq (install if needed)
+              perf=$(cat "$file" | python3 -c "import sys, json; print(json.load(sys.stdin)['categories']['performance']['score'] * 100)")
+              a11y=$(cat "$file" | python3 -c "import sys, json; print(json.load(sys.stdin)['categories']['accessibility']['score'] * 100)")
+              
+              echo "Performance: $perf%"
+              echo "Accessibility: $a11y%"
+              
+              # Check thresholds
+              if (( $(echo "$perf < 70" | bc -l) )); then
+                echo "::warning::Performance score below 70%"
+              fi
+              
+              if (( $(echo "$a11y < 90" | bc -l) )); then
+                echo "::error::Accessibility score below 90%"
+                exit 1
+              fi
+            fi
+          done
+          
+          echo "All budget checks passed!"
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [lighthouse, lighthouse-budget-check]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ needs.lighthouse.result }}"
+          COLOR="good"
+          if [ "$STATUS" != "success" ]; then
+            COLOR="danger"
+          fi
+          
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"attachments\": [{
+                \"color\": \"$COLOR\",
+                \"title\": \"Lighthouse CI Results\",
+                \"text\": \"Lighthouse audit completed with status: $STATUS\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${{ github.repository }}\", \"short\": true},
+                  {\"title\": \"Branch\", \"value\": \"${{ github.ref_name }}\", \"short\": true}
+                ]
+              }]
+            }" \
+            $SLACK_WEBHOOK_URL

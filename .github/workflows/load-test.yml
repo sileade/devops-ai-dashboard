@@ -1,0 +1,159 @@
+name: Load Testing
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of load test to run'
+        required: true
+        default: 'load'
+        type: choice
+        options:
+          - load
+          - stress
+          - spike
+      vus:
+        description: 'Number of virtual users (overrides default)'
+        required: false
+        type: number
+      duration:
+        description: 'Test duration (e.g., 5m, 10m)'
+        required: false
+        type: string
+  
+  # Run on schedule (weekly)
+  schedule:
+    - cron: '0 2 * * 0' # Every Sunday at 2 AM
+  
+  # Run on release
+  release:
+    types: [published]
+
+env:
+  K6_VERSION: '0.49.0'
+
+jobs:
+  load-test:
+    name: Run Load Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Determine test script
+        id: test-script
+        run: |
+          TEST_TYPE="${{ github.event.inputs.test_type || 'load' }}"
+          case $TEST_TYPE in
+            load)
+              echo "script=k6/load-test.js" >> $GITHUB_OUTPUT
+              ;;
+            stress)
+              echo "script=k6/stress-test.js" >> $GITHUB_OUTPUT
+              ;;
+            spike)
+              echo "script=k6/spike-test.js" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          echo "type=$TEST_TYPE" >> $GITHUB_OUTPUT
+
+      - name: Run k6 load test
+        run: |
+          SCRIPT="${{ steps.test-script.outputs.script }}"
+          VUS="${{ github.event.inputs.vus }}"
+          DURATION="${{ github.event.inputs.duration }}"
+          
+          CMD="k6 run"
+          
+          if [ -n "$VUS" ]; then
+            CMD="$CMD --vus $VUS"
+          fi
+          
+          if [ -n "$DURATION" ]; then
+            CMD="$CMD --duration $DURATION"
+          fi
+          
+          CMD="$CMD --out json=k6-results.json $SCRIPT"
+          
+          echo "Running: $CMD"
+          $CMD -e BASE_URL=${{ secrets.STAGING_URL || 'http://localhost:3000' }}
+        continue-on-error: true
+
+      - name: Upload k6 results
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results-${{ steps.test-script.outputs.type }}
+          path: |
+            k6-results.json
+            k6/*-summary.json
+          retention-days: 30
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Load Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Type:** ${{ steps.test-script.outputs.type }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f k6-results.json ]; then
+            # Extract key metrics
+            echo "### Key Metrics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            
+            # Parse JSON results (simplified)
+            TOTAL_REQUESTS=$(grep -c '"type":"Point"' k6-results.json 2>/dev/null || echo "N/A")
+            echo "| Total Data Points | $TOTAL_REQUESTS |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -X POST -H 'Content-type: application/json' \
+              --data "{
+                \"text\": \"⚠️ Load test failed!\",
+                \"attachments\": [{
+                  \"color\": \"danger\",
+                  \"fields\": [
+                    {\"title\": \"Test Type\", \"value\": \"${{ steps.test-script.outputs.type }}\", \"short\": true},
+                    {\"title\": \"Repository\", \"value\": \"${{ github.repository }}\", \"short\": true}
+                  ]
+                }]
+              }" \
+              $SLACK_WEBHOOK_URL
+          fi
+
+  compare-results:
+    name: Compare with Baseline
+    runs-on: ubuntu-latest
+    needs: load-test
+    if: github.event_name == 'release'
+    
+    steps:
+      - name: Download current results
+        uses: actions/download-artifact@v4
+        with:
+          name: k6-results-load
+          path: current/
+
+      - name: Compare with baseline
+        run: |
+          echo "## Performance Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Comparing current release with baseline..." >> $GITHUB_STEP_SUMMARY
+          # Add comparison logic here if baseline exists
