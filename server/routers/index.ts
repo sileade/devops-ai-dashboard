@@ -22,3 +22,5 @@ export { canaryRouter } from "./canary";
 export { argoCDRouter } from "./argocd";
 export { chatBotRouter } from "./chatbot";
 export { blueGreenRouter } from "./bluegreen";
+export { teamsRouter } from "./teams";
+export { auditLogRouter } from "./auditLog";

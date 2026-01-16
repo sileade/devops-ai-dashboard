@@ -49,6 +49,8 @@ import {
   Bird,
   MessageSquare,
   ArrowLeftRight,
+  Users,
+  FileText,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -109,6 +111,8 @@ const menuItems: MenuItem[] = [
   { icon: ArrowLeftRight, label: "Blue-Green", path: "/bluegreen" },
   { icon: GitBranch, label: "ArgoCD", path: "/argocd" },
   { icon: MessageSquare, label: "Chat Bot", path: "/chatbot" },
+  { icon: Users, label: "Teams", path: "/teams" },
+  { icon: FileText, label: "Audit Log", path: "/audit-log" },
   {
     icon: Settings,
     label: "Settings",

@@ -24,6 +24,8 @@ import {
   argoCDRouter,
   chatBotRouter,
   blueGreenRouter,
+  teamsRouter,
+  auditLogRouter,
 } from "./routers/index";
 
 /**
@@ -63,6 +65,8 @@ export const appRouter = router({
   argocd: argoCDRouter,
   chatbot: chatBotRouter,
   bluegreen: blueGreenRouter,
+  teams: teamsRouter,
+  auditLog: auditLogRouter,
 });
 
 export type AppRouter = typeof appRouter;

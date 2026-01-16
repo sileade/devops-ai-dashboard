@@ -553,6 +553,85 @@ Default alert thresholds are automatically created:
 | Disk Usage | 85% | 95% |
 | Pod Restarts | 3 | 5 |
 
+## Multi-Tenancy (NEW)
+
+The platform supports multi-tenancy for managing multiple teams with isolated resources:
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Team Management** | Create and manage teams with custom branding |
+| **Role-Based Access** | Owner, Admin, Member, Viewer roles with granular permissions |
+| **Resource Isolation** | Team-scoped resources and data separation |
+| **Invitation System** | Email-based invitations with expiration |
+| **Team Switching** | Quick navigation between teams |
+| **Activity Tracking** | Per-team activity logs and statistics |
+| **AI Insights** | AI-powered team health analysis |
+
+### Team Roles
+
+| Role | Permissions |
+|------|-------------|
+| **Owner** | Full access, can delete team, transfer ownership |
+| **Admin** | Manage members, settings, resources |
+| **Member** | Create and manage own resources |
+| **Viewer** | Read-only access to team resources |
+
+### Usage
+
+1. Navigate to **Teams** in the sidebar
+2. Create a new team or select existing
+3. Invite members via email
+4. Manage roles and permissions
+5. View team activity and AI insights
+
+## Audit Log (NEW)
+
+Comprehensive audit logging for tracking all user activities:
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Event Tracking** | All user actions logged with full context |
+| **Risk Assessment** | Automatic risk level classification (low/medium/high/critical) |
+| **Suspicious Activity Detection** | AI-powered anomaly detection |
+| **Filtering & Search** | Advanced filtering by action, user, risk, status |
+| **Export** | Export logs in JSON or CSV format |
+| **Retention Policies** | Configurable log retention periods |
+| **Real-time Alerts** | Notifications for suspicious activities |
+| **Session Management** | Track and invalidate user sessions |
+
+### Logged Events
+
+- Authentication (login, logout, failed attempts)
+- Resource operations (create, read, update, delete)
+- Deployments (deploy, rollback, scale)
+- Team management (invites, role changes)
+- Configuration changes
+- Secret access
+- AI queries
+
+### Usage
+
+1. Navigate to **Audit Log** in the sidebar
+2. Use filters to find specific events
+3. Click on events for detailed information
+4. View analytics for patterns
+5. Check AI anomaly detection for security insights
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `auditLog.getLogs` | Query audit logs with filters |
+| `auditLog.getStats` | Get audit log statistics |
+| `auditLog.export` | Export logs to file |
+| `auditLog.detectAnomalies` | AI-powered anomaly detection |
+| `auditLog.getSessions` | Get user sessions |
+| `auditLog.invalidateSession` | Invalidate a session |
+
 ## Testing
 
 Run the test suite:

@@ -29,6 +29,8 @@ import CanaryDeployments from "./pages/CanaryDeployments";
 import ArgoCD from "./pages/ArgoCD";
 import ChatBot from "./pages/ChatBot";
 import BlueGreen from "./pages/BlueGreen";
+import Teams from "./pages/Teams";
+import AuditLog from "./pages/AuditLog";
 
 function Router() {
   return (
@@ -58,6 +60,8 @@ function Router() {
         <Route path="/argocd" component={ArgoCD} />
         <Route path="/chatbot" component={ChatBot} />
         <Route path="/bluegreen" component={BlueGreen} />
+        <Route path="/teams" component={Teams} />
+        <Route path="/audit-log" component={AuditLog} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

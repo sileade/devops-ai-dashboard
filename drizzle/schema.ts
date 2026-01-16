@@ -838,3 +838,402 @@ export const canaryTemplates = mysqlTable("canary_templates", {
 
 export type CanaryTemplate = typeof canaryTemplates.$inferSelect;
 export type InsertCanaryTemplate = typeof canaryTemplates.$inferInsert;
+
+
+// ============================================
+// MULTI-TENANCY (TEAMS)
+// ============================================
+
+// Teams for multi-tenancy
+export const teams = mysqlTable("teams", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  
+  // Organization hierarchy
+  parentTeamId: int("parentTeamId"), // For nested teams/departments
+  
+  // Owner
+  ownerId: int("ownerId").notNull(),
+  
+  // Settings
+  settings: json("settings"), // Team-specific settings
+  
+  // Branding
+  logoUrl: varchar("logoUrl", { length: 500 }),
+  primaryColor: varchar("primaryColor", { length: 7 }).default("#3B82F6"),
+  
+  // Limits
+  maxMembers: int("maxMembers").default(10),
+  maxApplications: int("maxApplications").default(5),
+  maxClusters: int("maxClusters").default(3),
+  
+  // Billing (for future use)
+  plan: mysqlEnum("plan", ["free", "starter", "professional", "enterprise"]).default("free").notNull(),
+  billingEmail: varchar("billingEmail", { length: 320 }),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  suspendedAt: timestamp("suspendedAt"),
+  suspendedReason: text("suspendedReason"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = typeof teams.$inferInsert;
+
+// Team members with roles
+export const teamMembers = mysqlTable("team_members", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  userId: int("userId").notNull(),
+  
+  // Role within the team
+  role: mysqlEnum("role", ["owner", "admin", "member", "viewer"]).default("member").notNull(),
+  
+  // Permissions (granular override)
+  permissions: json("permissions"), // Custom permissions override
+  
+  // Status
+  status: mysqlEnum("status", ["active", "invited", "suspended"]).default("active").notNull(),
+  
+  // Invitation tracking
+  invitedBy: int("invitedBy"),
+  invitedAt: timestamp("invitedAt"),
+  acceptedAt: timestamp("acceptedAt"),
+  
+  // Activity
+  lastActiveAt: timestamp("lastActiveAt"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type InsertTeamMember = typeof teamMembers.$inferInsert;
+
+// Team invitations
+export const teamInvitations = mysqlTable("team_invitations", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  
+  // Invitation details
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["admin", "member", "viewer"]).default("member").notNull(),
+  
+  // Token for accepting
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  
+  // Sender
+  invitedBy: int("invitedBy").notNull(),
+  
+  // Message
+  personalMessage: text("personalMessage"),
+  
+  // Status
+  status: mysqlEnum("status", ["pending", "accepted", "declined", "expired", "cancelled"]).default("pending").notNull(),
+  
+  // Timing
+  expiresAt: timestamp("expiresAt").notNull(),
+  respondedAt: timestamp("respondedAt"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TeamInvitation = typeof teamInvitations.$inferSelect;
+export type InsertTeamInvitation = typeof teamInvitations.$inferInsert;
+
+// Team resources - links resources to teams for isolation
+export const teamResources = mysqlTable("team_resources", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  
+  // Resource type and ID
+  resourceType: mysqlEnum("resourceType", [
+    "application",
+    "cluster",
+    "connection",
+    "autoscaling_rule",
+    "scheduled_scaling",
+    "ab_test",
+    "canary_deployment",
+    "prometheus_config",
+    "email_config"
+  ]).notNull(),
+  resourceId: int("resourceId").notNull(),
+  
+  // Access level for this resource
+  accessLevel: mysqlEnum("accessLevel", ["full", "read_write", "read_only"]).default("full").notNull(),
+  
+  // Metadata
+  addedBy: int("addedBy").notNull(),
+  notes: text("notes"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TeamResource = typeof teamResources.$inferSelect;
+export type InsertTeamResource = typeof teamResources.$inferInsert;
+
+// Team activity feed
+export const teamActivity = mysqlTable("team_activity", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull(),
+  userId: int("userId"),
+  
+  // Activity type
+  activityType: mysqlEnum("activityType", [
+    "member_joined",
+    "member_left",
+    "member_role_changed",
+    "resource_added",
+    "resource_removed",
+    "settings_changed",
+    "team_created",
+    "team_updated"
+  ]).notNull(),
+  
+  // Activity details
+  description: text("description").notNull(),
+  metadata: json("metadata"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TeamActivity = typeof teamActivity.$inferSelect;
+export type InsertTeamActivity = typeof teamActivity.$inferInsert;
+
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+// Comprehensive audit log for all user actions
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  
+  // Who
+  userId: int("userId"),
+  userEmail: varchar("userEmail", { length: 320 }),
+  userName: varchar("userName", { length: 255 }),
+  teamId: int("teamId"),
+  
+  // What
+  action: mysqlEnum("action", [
+    // Auth actions
+    "login",
+    "logout",
+    "login_failed",
+    "password_changed",
+    "mfa_enabled",
+    "mfa_disabled",
+    
+    // Resource CRUD
+    "create",
+    "read",
+    "update",
+    "delete",
+    
+    // Deployment actions
+    "deploy",
+    "rollback",
+    "scale",
+    "restart",
+    "stop",
+    "start",
+    
+    // Team actions
+    "team_create",
+    "team_update",
+    "team_delete",
+    "member_invite",
+    "member_remove",
+    "member_role_change",
+    
+    // Configuration actions
+    "config_change",
+    "secret_access",
+    "secret_update",
+    
+    // AI actions
+    "ai_query",
+    "ai_recommendation_applied",
+    
+    // Export/Import
+    "export",
+    "import",
+    
+    // Admin actions
+    "admin_action",
+    "system_config_change"
+  ]).notNull(),
+  
+  // Resource affected
+  resourceType: varchar("resourceType", { length: 100 }),
+  resourceId: varchar("resourceId", { length: 255 }),
+  resourceName: varchar("resourceName", { length: 255 }),
+  
+  // Details
+  description: text("description").notNull(),
+  
+  // Before/After state for changes
+  previousState: json("previousState"),
+  newState: json("newState"),
+  
+  // Request context
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: varchar("userAgent", { length: 500 }),
+  requestId: varchar("requestId", { length: 64 }),
+  sessionId: varchar("sessionId", { length: 64 }),
+  
+  // Location (from IP)
+  country: varchar("country", { length: 2 }),
+  city: varchar("city", { length: 100 }),
+  
+  // Result
+  status: mysqlEnum("status", ["success", "failure", "partial"]).default("success").notNull(),
+  errorMessage: text("errorMessage"),
+  
+  // Risk assessment
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("low").notNull(),
+  isSuspicious: boolean("isSuspicious").default(false).notNull(),
+  suspiciousReason: text("suspiciousReason"),
+  
+  // Timing
+  duration: int("duration"), // milliseconds
+  
+  // Additional metadata
+  metadata: json("metadata"),
+  tags: json("tags"), // Array of tags for filtering
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// Audit log retention policies
+export const auditLogPolicies = mysqlTable("audit_log_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId"),
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // What to retain
+  actionTypes: json("actionTypes"), // Array of action types, null = all
+  resourceTypes: json("resourceTypes"), // Array of resource types, null = all
+  riskLevels: json("riskLevels"), // Array of risk levels, null = all
+  
+  // Retention period
+  retentionDays: int("retentionDays").default(90).notNull(),
+  
+  // Archive settings
+  archiveEnabled: boolean("archiveEnabled").default(false).notNull(),
+  archiveLocation: varchar("archiveLocation", { length: 500 }),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  lastAppliedAt: timestamp("lastAppliedAt"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AuditLogPolicy = typeof auditLogPolicies.$inferSelect;
+export type InsertAuditLogPolicy = typeof auditLogPolicies.$inferInsert;
+
+// Audit log alerts - for suspicious activity detection
+export const auditLogAlerts = mysqlTable("audit_log_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId"),
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Trigger conditions
+  triggerConditions: json("triggerConditions").notNull(), // Rules for triggering
+  
+  // Actions to take
+  notifyEmail: boolean("notifyEmail").default(true).notNull(),
+  notifySlack: boolean("notifySlack").default(false).notNull(),
+  notifyWebhook: boolean("notifyWebhook").default(false).notNull(),
+  webhookUrl: varchar("webhookUrl", { length: 500 }),
+  
+  // Severity
+  severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("warning").notNull(),
+  
+  // Cooldown
+  cooldownMinutes: int("cooldownMinutes").default(15).notNull(),
+  lastTriggeredAt: timestamp("lastTriggeredAt"),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  triggerCount: int("triggerCount").default(0).notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AuditLogAlert = typeof auditLogAlerts.$inferSelect;
+export type InsertAuditLogAlert = typeof auditLogAlerts.$inferInsert;
+
+// Saved audit log queries/filters
+export const auditLogSavedQueries = mysqlTable("audit_log_saved_queries", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  teamId: int("teamId"),
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Query parameters
+  filters: json("filters").notNull(),
+  
+  // Display settings
+  columns: json("columns"), // Which columns to show
+  sortBy: varchar("sortBy", { length: 100 }),
+  sortOrder: mysqlEnum("sortOrder", ["asc", "desc"]).default("desc"),
+  
+  // Sharing
+  isShared: boolean("isShared").default(false).notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AuditLogSavedQuery = typeof auditLogSavedQueries.$inferSelect;
+export type InsertAuditLogSavedQuery = typeof auditLogSavedQueries.$inferInsert;
+
+// User sessions for audit tracking
+export const userSessions = mysqlTable("user_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+  
+  // Device info
+  deviceType: varchar("deviceType", { length: 50 }),
+  browser: varchar("browser", { length: 100 }),
+  os: varchar("os", { length: 100 }),
+  
+  // Location
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  country: varchar("country", { length: 2 }),
+  city: varchar("city", { length: 100 }),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Timing
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = typeof userSessions.$inferInsert;
