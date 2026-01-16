@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# DevOps AI Dashboard - Pre-commit Hook
+# Runs type checking and critical tests before each commit
+
+echo "🔍 Running pre-commit checks..."
+
+# Run TypeScript type check
+echo "📝 Running TypeScript check..."
+pnpm check
+if [ $? -ne 0 ]; then
+  echo "❌ TypeScript check failed. Please fix type errors before committing."
+  exit 1
+fi
+
+# Run critical unit tests
+echo "🧪 Running critical tests..."
+pnpm test --run --reporter=dot 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed. Please fix failing tests before committing."
+  exit 1
+fi
+
+echo "✅ All pre-commit checks passed!"

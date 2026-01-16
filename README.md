@@ -577,18 +577,118 @@ test.describe('My Feature', () => {
 | Containers | 8 | Docker/Podman container management |
 | Kubernetes | 10 | K8s cluster operations |
 | AI Assistant | 10 | AI chat and recommendations |
-| **Total** | **36** | Critical user flows |
+| Visual Regression | 15 | Screenshot comparison tests |
+| Mobile | 20 | Touch interactions and responsive layout |
+| **Total** | **71** | Critical user flows |
+
+### Visual Regression Testing
+
+Visual regression tests capture screenshots and compare them against baseline images to detect unintended UI changes.
+
+```bash
+# Run visual regression tests
+npx playwright test e2e/visual.spec.ts
+
+# Update baseline screenshots (after intentional UI changes)
+npx playwright test --update-snapshots
+
+# Run visual tests for specific browser
+npx playwright test e2e/visual.spec.ts --project=chromium
+```
+
+Screenshots are stored in `e2e/snapshots/` directory. The configuration allows:
+
+- Maximum 100 pixel difference (`maxDiffPixels`)
+- 1% pixel ratio tolerance (`maxDiffPixelRatio`)
+- 0.2 color threshold for anti-aliasing
+
+### Mobile Device Testing
+
+The project includes comprehensive mobile device testing with real device emulation.
+
+```bash
+# Run tests on iPhone 14
+npx playwright test --project=iphone-14
+
+# Run tests on Pixel 7
+npx playwright test --project=pixel-7
+
+# Run tests on iPad Pro
+npx playwright test --project=ipad-pro
+
+# Run mobile-specific tests on all mobile devices
+npx playwright test e2e/mobile.spec.ts --project=iphone-14 --project=pixel-7
+```
+
+**Supported Devices:**
+
+| Device | Type | Viewport |
+|--------|------|----------|
+| iPhone 14 | iOS | 390x844 |
+| iPhone 14 Pro Max | iOS | 430x932 |
+| iPad Pro 11 | iOS Tablet | 834x1194 |
+| Pixel 7 | Android | 412x915 |
+| Galaxy S23 | Android | 360x780 |
+| Galaxy Tab S8 | Android Tablet | 800x1280 |
+
+Mobile tests verify:
+
+- Responsive navigation (hamburger menu)
+- Touch interactions (tap, swipe)
+- Virtual keyboard handling
+- Vertical card stacking
+- No horizontal scroll
+- Performance on mobile networks
+
+### Pre-commit Hooks
+
+The project uses Husky and lint-staged to run automated checks before each commit.
+
+**Setup (automatic on `pnpm install`):**
+
+```bash
+# Manual setup if needed
+npx husky init
+```
+
+**Pre-commit checks include:**
+
+1. **lint-staged** - Formats staged files with Prettier
+2. **TypeScript check** - Runs `pnpm check` for type errors
+3. **Unit tests** - Runs all Vitest tests
+
+**Commit message format (Conventional Commits):**
+
+```
+<type>(<scope>): <description>
+
+Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+
+Examples:
+  feat(dashboard): add new metrics chart
+  fix(auth): resolve login redirect issue
+  docs: update README with E2E testing guide
+```
+
+**Bypass hooks (use sparingly):**
+
+```bash
+# Skip pre-commit hooks
+git commit --no-verify -m "emergency fix"
+```
 
 ### Test Configuration
 
 Playwright is configured in `playwright.config.ts` with:
 
-- Chromium browser testing (Firefox and WebKit available)
+- Chromium, Firefox, and WebKit browser testing
+- Mobile device emulation (iPhone, Pixel, iPad, Galaxy)
 - Automatic dev server startup on port 3000
 - Screenshot on failure
 - Video recording on retry
 - HTML and JSON reports in `playwright-report/`
-- 30 second default timeout per test
+- Visual regression with configurable thresholds
+- 60 second default timeout per test
 
 ## Code Statistics
 

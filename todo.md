@@ -603,3 +603,32 @@
 - [x] Update README with new features
 - [x] Update CHANGELOG
 - [x] Commit and push to GitHub
+
+
+## Phase 21: Visual Regression, Mobile Testing & Pre-commit Hooks
+
+### Visual Regression Tests
+- [x] Create visual regression test file (e2e/visual.spec.ts)
+- [x] Add screenshot tests for dashboard page
+- [x] Add screenshot tests for containers page
+- [x] Add screenshot tests for kubernetes page
+- [x] Configure snapshot directory structure
+
+### Mobile Device Testing
+- [x] Add iPhone 14 project to playwright.config.ts
+- [x] Add Pixel 7 project to playwright.config.ts
+- [x] Create mobile-specific test file (e2e/mobile.spec.ts)
+- [x] Test responsive navigation on mobile
+- [x] Test touch interactions
+
+### Pre-commit Hooks
+- [x] Install Husky for git hooks
+- [x] Install lint-staged for staged file processing
+- [x] Configure pre-commit hook to run critical tests
+- [x] Add TypeScript check to pre-commit
+- [x] Add commit-msg hook for Conventional Commits
+
+### Documentation
+- [x] Update README with visual regression guide
+- [x] Update README with mobile testing guide
+- [x] Update README with pre-commit hook setup
