@@ -17,3 +17,4 @@ export { abTestingRouter } from "./abTesting";
 export { emailRouter } from "./email";
 export { prometheusRouter } from "./prometheus";
 export { clustersRouter } from "./clusters";
+export { healthRouter } from "./health";

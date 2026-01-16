@@ -311,3 +311,34 @@
 - [x] Add deployment documentation
 - [x] Commit and push to GitHub
 - [x] Full code review
+
+## Phase 11: Docker Compose & GitOps-lite Pull Agent
+
+### Docker Compose Setup
+- [x] Create Dockerfile for the application
+- [x] Create docker-compose.yml with all services
+- [x] Create .env.example with all required variables
+- [x] Add health checks to all services
+- [x] Create nginx reverse proxy configuration
+
+### GitOps-lite Pull Agent
+- [x] Create pull-agent service in separate container
+- [x] Implement webhook endpoint for GitHub notifications
+- [x] Add automatic git pull on webhook trigger
+- [x] Implement service restart after code update
+- [x] Add rollback mechanism on failed deployment
+- [x] Create deployment status notifications
+- [x] Add configurable polling interval as fallback
+
+### Installation Automation
+- [x] Create install.sh one-liner installation script
+- [x] Create update.sh script for manual updates
+- [x] Create systemd service for auto-start
+- [x] Add SSL/TLS certificate automation (Let's Encrypt)
+- [x] Create backup/restore scripts
+
+### Documentation
+- [x] Update README with Docker deployment instructions
+- [x] Add GitOps workflow documentation
+- [x] Create troubleshooting guide
+- [x] Test full deployment workflow

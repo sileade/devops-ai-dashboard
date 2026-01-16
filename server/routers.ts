@@ -19,6 +19,7 @@ import {
   emailRouter,
   prometheusRouter,
   clustersRouter,
+  healthRouter,
 } from "./routers/index";
 
 /**
@@ -53,6 +54,7 @@ export const appRouter = router({
   email: emailRouter,
   prometheus: prometheusRouter,
   clusters: clustersRouter,
+  health: healthRouter,
 });
 
 export type AppRouter = typeof appRouter;

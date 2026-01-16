@@ -258,14 +258,107 @@ The platform exposes 80+ tRPC endpoints organized by module:
 
 ## Installation
 
-### Prerequisites
+### Quick Install (Docker Compose)
+
+The fastest way to deploy DevOps AI Dashboard:
+
+```bash
+# One-liner installation
+curl -fsSL https://raw.githubusercontent.com/sileade/devops-ai-dashboard/main/scripts/install.sh | sudo bash
+
+# With options
+curl -fsSL https://raw.githubusercontent.com/sileade/devops-ai-dashboard/main/scripts/install.sh | sudo bash -s -- \
+  --domain devops.example.com \
+  --with-monitoring \
+  --with-traefik
+```
+
+#### Installation Options
+
+| Option | Description |
+|--------|-------------|
+| `--domain <domain>` | Domain name (default: localhost) |
+| `--branch <branch>` | Git branch to deploy (default: main) |
+| `--install-dir <path>` | Installation directory (default: /opt/devops-dashboard) |
+| `--with-monitoring` | Enable Prometheus/Grafana stack |
+| `--with-traefik` | Use Traefik instead of Nginx (with auto SSL) |
+
+### Docker Compose Manual Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/sileade/devops-ai-dashboard.git
+cd devops-ai-dashboard
+```
+
+2. Create environment file:
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+3. Start services:
+```bash
+# Basic setup (app + database + redis)
+docker compose up -d
+
+# With monitoring (Prometheus + Grafana)
+docker compose --profile monitoring up -d
+
+# With Traefik (auto SSL)
+docker compose --profile traefik up -d
+
+# Full stack
+docker compose --profile monitoring --profile traefik up -d
+```
+
+4. Access the application:
+- Dashboard: http://localhost:3000
+- Prometheus: http://localhost:9090 (if enabled)
+- Grafana: http://localhost:3001 (if enabled)
+
+### GitOps-lite Pull Agent
+
+The Pull Agent enables automatic deployments from GitHub:
+
+#### Features
+- **Webhook Support**: Instant deployment on git push
+- **Polling Fallback**: Checks for updates every 5 minutes
+- **Auto Rollback**: Reverts to previous version on failed deployment
+- **Notifications**: Slack, Telegram, and custom webhook support
+- **Health Checks**: Validates deployment before completing
+
+#### GitHub Webhook Setup
+
+1. Go to your repository Settings → Webhooks → Add webhook
+2. Configure:
+   - **Payload URL**: `http://your-domain:9000/webhook/github`
+   - **Content type**: `application/json`
+   - **Secret**: Use the value from `GITHUB_WEBHOOK_SECRET` in your `.env`
+   - **Events**: Select "Just the push event"
+
+#### Pull Agent Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/status` | GET | Deployment status and history |
+| `/webhook/github` | POST | GitHub webhook receiver |
+| `/deploy` | POST | Manual deployment trigger |
+| `/check-updates` | GET | Check for available updates |
+| `/rollback` | POST | Rollback to specific commit |
+| `/history` | GET | Deployment history |
+
+### Manual Setup (Development)
+
+#### Prerequisites
 - Node.js 22+
 - pnpm package manager
 - MySQL/TiDB database
 - Docker (for container management)
 - Kubernetes cluster (optional)
 
-### Setup
+#### Setup
 
 1. Clone the repository:
 ```bash
