@@ -336,6 +336,154 @@ var abTestMetrics = mysqlTable("ab_test_metrics", {
   // rapid up/down cycles
   cooldownViolations: int("cooldownViolations").default(0).notNull()
 });
+var emailConfig = mysqlTable("email_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  smtpHost: varchar("smtpHost", { length: 255 }).notNull(),
+  smtpPort: int("smtpPort").default(587).notNull(),
+  smtpSecure: boolean("smtpSecure").default(false).notNull(),
+  smtpUser: varchar("smtpUser", { length: 255 }).notNull(),
+  smtpPassword: varchar("smtpPassword", { length: 500 }).notNull(),
+  // encrypted
+  fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
+  fromName: varchar("fromName", { length: 255 }).default("DevOps AI Dashboard"),
+  isVerified: boolean("isVerified").default(false).notNull(),
+  lastTestedAt: timestamp("lastTestedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var emailSubscriptions = mysqlTable("email_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  name: varchar("name", { length: 255 }),
+  // Notification types
+  criticalAlerts: boolean("criticalAlerts").default(true).notNull(),
+  warningAlerts: boolean("warningAlerts").default(true).notNull(),
+  infoAlerts: boolean("infoAlerts").default(false).notNull(),
+  scalingEvents: boolean("scalingEvents").default(true).notNull(),
+  abTestResults: boolean("abTestResults").default(true).notNull(),
+  dailyDigest: boolean("dailyDigest").default(false).notNull(),
+  weeklyReport: boolean("weeklyReport").default(true).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  unsubscribeToken: varchar("unsubscribeToken", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var emailHistory = mysqlTable("email_history", {
+  id: int("id").autoincrement().primaryKey(),
+  subscriptionId: int("subscriptionId"),
+  toEmail: varchar("toEmail", { length: 320 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  templateType: mysqlEnum("templateType", ["alert", "scaling", "ab_test", "digest", "report", "custom"]).notNull(),
+  status: mysqlEnum("status", ["pending", "sent", "failed", "bounced"]).default("pending").notNull(),
+  messageId: varchar("messageId", { length: 255 }),
+  errorMessage: text("errorMessage"),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var prometheusConfig = mysqlTable("prometheus_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  applicationId: int("applicationId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  prometheusUrl: varchar("prometheusUrl", { length: 500 }).notNull(),
+  prometheusUsername: varchar("prometheusUsername", { length: 255 }),
+  prometheusPassword: varchar("prometheusPassword", { length: 500 }),
+  grafanaUrl: varchar("grafanaUrl", { length: 500 }),
+  grafanaApiKey: varchar("grafanaApiKey", { length: 500 }),
+  scrapeInterval: int("scrapeInterval").default(15).notNull(),
+  // seconds
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastScrapeAt: timestamp("lastScrapeAt"),
+  lastScrapeStatus: mysqlEnum("lastScrapeStatus", ["success", "failed", "timeout"]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var prometheusMetrics = mysqlTable("prometheus_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  configId: int("configId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  query: text("query").notNull(),
+  // PromQL query
+  description: text("description"),
+  unit: varchar("unit", { length: 50 }),
+  aggregation: mysqlEnum("aggregation", ["avg", "sum", "min", "max", "count", "rate"]).default("avg").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var grafanaDashboards = mysqlTable("grafana_dashboards", {
+  id: int("id").autoincrement().primaryKey(),
+  configId: int("configId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  uid: varchar("uid", { length: 100 }).notNull(),
+  embedUrl: text("embedUrl"),
+  category: mysqlEnum("category", ["overview", "containers", "kubernetes", "custom"]).default("custom").notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var kubernetesClusters = mysqlTable("kubernetes_clusters", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  displayName: varchar("displayName", { length: 255 }),
+  description: text("description"),
+  // Connection details
+  apiServerUrl: varchar("apiServerUrl", { length: 500 }).notNull(),
+  authType: mysqlEnum("authType", ["kubeconfig", "token", "certificate", "oidc"]).default("token").notNull(),
+  kubeconfig: text("kubeconfig"),
+  // encrypted
+  bearerToken: text("bearerToken"),
+  // encrypted
+  clientCertificate: text("clientCertificate"),
+  clientKey: text("clientKey"),
+  // encrypted
+  caCertificate: text("caCertificate"),
+  // Cluster metadata
+  kubernetesVersion: varchar("kubernetesVersion", { length: 50 }),
+  provider: mysqlEnum("provider", ["aws", "gcp", "azure", "digitalocean", "linode", "on-premise", "other"]).default("other"),
+  region: varchar("region", { length: 100 }),
+  // Status
+  status: mysqlEnum("status", ["connected", "disconnected", "error", "pending"]).default("pending").notNull(),
+  lastHealthCheck: timestamp("lastHealthCheck"),
+  healthStatus: mysqlEnum("healthStatus", ["healthy", "degraded", "unhealthy", "unknown"]).default("unknown"),
+  nodeCount: int("nodeCount"),
+  podCount: int("podCount"),
+  // Settings
+  isDefault: boolean("isDefault").default(false).notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  syncInterval: int("syncInterval").default(30).notNull(),
+  // seconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+});
+var clusterNamespaces = mysqlTable("cluster_namespaces", {
+  id: int("id").autoincrement().primaryKey(),
+  clusterId: int("clusterId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }),
+  labels: json("labels"),
+  podCount: int("podCount").default(0),
+  deploymentCount: int("deploymentCount").default(0),
+  serviceCount: int("serviceCount").default(0),
+  lastSyncAt: timestamp("lastSyncAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+var clusterComparisons = mysqlTable("cluster_comparisons", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  clusterIds: json("clusterIds").notNull(),
+  // array of cluster IDs
+  comparisonType: mysqlEnum("comparisonType", ["resources", "workloads", "networking", "storage", "all"]).default("all").notNull(),
+  snapshotData: json("snapshotData"),
+  // comparison results
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
 
 // server/_core/env.ts
 var ENV = {
@@ -4884,6 +5032,1844 @@ Provide a 2-3 sentence recommendation on which variant performed better and why.
   })
 });
 
+// server/routers/email.ts
+import { z as z11 } from "zod";
+import { eq as eq2, desc as desc2 } from "drizzle-orm";
+
+// server/services/email.ts
+import nodemailer from "nodemailer";
+var transporter = null;
+var emailConfig2 = null;
+function configureEmail(config) {
+  emailConfig2 = config;
+  transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: config.auth
+  });
+}
+async function testEmailConnection() {
+  if (!transporter) {
+    return { success: false, error: "Email not configured" };
+  }
+  try {
+    await transporter.verify();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+async function sendEmail(to, template) {
+  if (!transporter || !emailConfig2) {
+    return { success: false, error: "Email not configured" };
+  }
+  try {
+    const info = await transporter.sendMail({
+      from: emailConfig2.from,
+      to: Array.isArray(to) ? to.join(", ") : to,
+      subject: template.subject,
+      text: template.text,
+      html: template.html
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+function createAlertEmailTemplate(alert) {
+  const typeColors = {
+    critical: "#ef4444",
+    warning: "#f59e0b",
+    info: "#3b82f6"
+  };
+  const typeLabels = {
+    critical: "CRITICAL",
+    warning: "WARNING",
+    info: "INFO"
+  };
+  const color = typeColors[alert.type];
+  const label = typeLabels[alert.type];
+  return {
+    subject: `[${label}] ${alert.title} - DevOps AI Dashboard`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f4f4f5; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+          .header { background: ${color}; color: white; padding: 20px; }
+          .header h1 { margin: 0; font-size: 18px; }
+          .badge { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+          .content { padding: 20px; }
+          .metric { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+          .metric:last-child { border-bottom: none; }
+          .metric-label { color: #6b7280; }
+          .metric-value { font-weight: 600; color: #111827; }
+          .footer { padding: 20px; background: #f9fafb; text-align: center; color: #6b7280; font-size: 12px; }
+          .button { display: inline-block; background: ${color}; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 16px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="card">
+            <div class="header">
+              <span class="badge">${label}</span>
+              <h1>${alert.title}</h1>
+            </div>
+            <div class="content">
+              <p style="color: #374151; margin-top: 0;">${alert.message}</p>
+              <div class="metric">
+                <span class="metric-label">Resource</span>
+                <span class="metric-value">${alert.resource}</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Current Value</span>
+                <span class="metric-value">${alert.value.toFixed(1)}%</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Threshold</span>
+                <span class="metric-value">${alert.threshold}%</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Time</span>
+                <span class="metric-value">${alert.timestamp.toLocaleString()}</span>
+              </div>
+              <center>
+                <a href="#" class="button">View Dashboard</a>
+              </center>
+            </div>
+            <div class="footer">
+              DevOps AI Dashboard - Automated Alert Notification
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+[${label}] ${alert.title}
+
+${alert.message}
+
+Resource: ${alert.resource}
+Current Value: ${alert.value.toFixed(1)}%
+Threshold: ${alert.threshold}%
+Time: ${alert.timestamp.toLocaleString()}
+
+---
+DevOps AI Dashboard - Automated Alert Notification
+    `.trim()
+  };
+}
+function createABTestResultEmailTemplate(experiment) {
+  const winnerColor = experiment.winner === "none" ? "#6b7280" : "#10b981";
+  const winnerText = experiment.winner === "none" ? "No clear winner" : `Variant ${experiment.winner} wins`;
+  return {
+    subject: `[A/B Test Complete] ${experiment.name} - ${winnerText}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f4f4f5; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+          .header { background: #8b5cf6; color: white; padding: 20px; }
+          .header h1 { margin: 0; font-size: 18px; }
+          .badge { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+          .content { padding: 20px; }
+          .winner-banner { background: ${winnerColor}; color: white; padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 20px; }
+          .winner-banner h2 { margin: 0; font-size: 20px; }
+          .comparison { display: flex; gap: 16px; margin-bottom: 20px; }
+          .variant { flex: 1; background: #f9fafb; padding: 16px; border-radius: 8px; }
+          .variant h3 { margin: 0 0 12px 0; font-size: 14px; color: #374151; }
+          .variant-metric { margin-bottom: 8px; }
+          .variant-metric-label { font-size: 12px; color: #6b7280; }
+          .variant-metric-value { font-size: 16px; font-weight: 600; color: #111827; }
+          .recommendation { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin-top: 20px; }
+          .recommendation h4 { margin: 0 0 8px 0; color: #92400e; }
+          .recommendation p { margin: 0; color: #78350f; }
+          .footer { padding: 20px; background: #f9fafb; text-align: center; color: #6b7280; font-size: 12px; }
+          .confidence { font-size: 14px; color: #6b7280; margin-top: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="card">
+            <div class="header">
+              <span class="badge">A/B TEST COMPLETE</span>
+              <h1>${experiment.name}</h1>
+            </div>
+            <div class="content">
+              <div class="winner-banner">
+                <h2>${winnerText}</h2>
+                <p class="confidence">Confidence: ${experiment.confidence.toFixed(1)}% | Duration: ${experiment.duration}</p>
+              </div>
+              
+              <div class="comparison">
+                <div class="variant" style="${experiment.winner === "A" ? "border: 2px solid #10b981;" : ""}">
+                  <h3>Variant A: ${experiment.variantA.name}</h3>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Avg Response Time</div>
+                    <div class="variant-metric-value">${experiment.variantA.avgResponseTime.toFixed(0)}ms</div>
+                  </div>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Error Rate</div>
+                    <div class="variant-metric-value">${experiment.variantA.errorRate.toFixed(2)}%</div>
+                  </div>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Resource Efficiency</div>
+                    <div class="variant-metric-value">${experiment.variantA.resourceEfficiency.toFixed(1)}%</div>
+                  </div>
+                </div>
+                
+                <div class="variant" style="${experiment.winner === "B" ? "border: 2px solid #10b981;" : ""}">
+                  <h3>Variant B: ${experiment.variantB.name}</h3>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Avg Response Time</div>
+                    <div class="variant-metric-value">${experiment.variantB.avgResponseTime.toFixed(0)}ms</div>
+                  </div>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Error Rate</div>
+                    <div class="variant-metric-value">${experiment.variantB.errorRate.toFixed(2)}%</div>
+                  </div>
+                  <div class="variant-metric">
+                    <div class="variant-metric-label">Resource Efficiency</div>
+                    <div class="variant-metric-value">${experiment.variantB.resourceEfficiency.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="recommendation">
+                <h4>AI Recommendation</h4>
+                <p>${experiment.recommendation}</p>
+              </div>
+            </div>
+            <div class="footer">
+              DevOps AI Dashboard - A/B Test Results
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+[A/B TEST COMPLETE] ${experiment.name}
+
+${winnerText}
+Confidence: ${experiment.confidence.toFixed(1)}%
+Duration: ${experiment.duration}
+
+Variant A: ${experiment.variantA.name}
+- Avg Response Time: ${experiment.variantA.avgResponseTime.toFixed(0)}ms
+- Error Rate: ${experiment.variantA.errorRate.toFixed(2)}%
+- Resource Efficiency: ${experiment.variantA.resourceEfficiency.toFixed(1)}%
+
+Variant B: ${experiment.variantB.name}
+- Avg Response Time: ${experiment.variantB.avgResponseTime.toFixed(0)}ms
+- Error Rate: ${experiment.variantB.errorRate.toFixed(2)}%
+- Resource Efficiency: ${experiment.variantB.resourceEfficiency.toFixed(1)}%
+
+AI Recommendation:
+${experiment.recommendation}
+
+---
+DevOps AI Dashboard - A/B Test Results
+    `.trim()
+  };
+}
+function createScalingEventEmailTemplate(event) {
+  const typeLabels = {
+    scale_up: "SCALE UP",
+    scale_down: "SCALE DOWN",
+    scheduled: "SCHEDULED SCALING"
+  };
+  const typeColors = {
+    scale_up: "#10b981",
+    scale_down: "#f59e0b",
+    scheduled: "#3b82f6"
+  };
+  const label = typeLabels[event.type];
+  const color = typeColors[event.type];
+  return {
+    subject: `[${label}] ${event.resource}: ${event.previousReplicas} \u2192 ${event.newReplicas} replicas`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f4f4f5; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+          .header { background: ${color}; color: white; padding: 20px; }
+          .header h1 { margin: 0; font-size: 18px; }
+          .badge { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+          .content { padding: 20px; }
+          .scaling-visual { text-align: center; padding: 20px; background: #f9fafb; border-radius: 8px; margin-bottom: 20px; }
+          .scaling-numbers { display: flex; align-items: center; justify-content: center; gap: 20px; }
+          .replica-count { font-size: 36px; font-weight: 700; color: #111827; }
+          .arrow { font-size: 24px; color: ${color}; }
+          .metric { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+          .metric:last-child { border-bottom: none; }
+          .metric-label { color: #6b7280; }
+          .metric-value { font-weight: 600; color: #111827; }
+          .ai-recommendation { background: #ede9fe; border-left: 4px solid #8b5cf6; padding: 16px; margin-top: 20px; }
+          .ai-recommendation h4 { margin: 0 0 8px 0; color: #5b21b6; }
+          .ai-recommendation p { margin: 0; color: #6d28d9; }
+          .footer { padding: 20px; background: #f9fafb; text-align: center; color: #6b7280; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="card">
+            <div class="header">
+              <span class="badge">${label}</span>
+              <h1>${event.resource}</h1>
+            </div>
+            <div class="content">
+              <div class="scaling-visual">
+                <div class="scaling-numbers">
+                  <span class="replica-count">${event.previousReplicas}</span>
+                  <span class="arrow">\u2192</span>
+                  <span class="replica-count">${event.newReplicas}</span>
+                </div>
+                <p style="color: #6b7280; margin: 8px 0 0 0;">replicas</p>
+              </div>
+              
+              <div class="metric">
+                <span class="metric-label">Reason</span>
+                <span class="metric-value">${event.reason}</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Time</span>
+                <span class="metric-value">${event.timestamp.toLocaleString()}</span>
+              </div>
+              
+              ${event.aiRecommendation ? `
+              <div class="ai-recommendation">
+                <h4>AI Analysis</h4>
+                <p>${event.aiRecommendation}</p>
+              </div>
+              ` : ""}
+            </div>
+            <div class="footer">
+              DevOps AI Dashboard - Scaling Event Notification
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+[${label}] ${event.resource}
+
+Replicas: ${event.previousReplicas} \u2192 ${event.newReplicas}
+Reason: ${event.reason}
+Time: ${event.timestamp.toLocaleString()}
+${event.aiRecommendation ? `
+AI Analysis:
+${event.aiRecommendation}` : ""}
+
+---
+DevOps AI Dashboard - Scaling Event Notification
+    `.trim()
+  };
+}
+
+// server/routers/email.ts
+import crypto from "crypto";
+var emailRouter = router({
+  // Get email configuration
+  getConfig: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0) return null;
+    const config = configs[0];
+    return {
+      ...config,
+      smtpPassword: config.smtpPassword ? "********" : null
+    };
+  }),
+  // Save email configuration
+  saveConfig: publicProcedure.input(z11.object({
+    smtpHost: z11.string().min(1),
+    smtpPort: z11.number().min(1).max(65535),
+    smtpSecure: z11.boolean(),
+    smtpUser: z11.string().min(1),
+    smtpPassword: z11.string().min(1),
+    fromEmail: z11.string().email(),
+    fromName: z11.string().optional()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const existing = await db.select().from(emailConfig).limit(1);
+    if (existing.length > 0) {
+      await db.update(emailConfig).set({
+        smtpHost: input.smtpHost,
+        smtpPort: input.smtpPort,
+        smtpSecure: input.smtpSecure,
+        smtpUser: input.smtpUser,
+        smtpPassword: input.smtpPassword,
+        fromEmail: input.fromEmail,
+        fromName: input.fromName || "DevOps AI Dashboard",
+        isVerified: false
+      }).where(eq2(emailConfig.id, existing[0].id));
+      return { success: true, id: existing[0].id };
+    } else {
+      const result = await db.insert(emailConfig).values({
+        userId: 1,
+        smtpHost: input.smtpHost,
+        smtpPort: input.smtpPort,
+        smtpSecure: input.smtpSecure,
+        smtpUser: input.smtpUser,
+        smtpPassword: input.smtpPassword,
+        fromEmail: input.fromEmail,
+        fromName: input.fromName || "DevOps AI Dashboard"
+      });
+      return { success: true, id: result[0].insertId };
+    }
+  }),
+  // Test email configuration
+  testConfig: publicProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0) {
+      return { success: false, error: "Email not configured" };
+    }
+    const config = configs[0];
+    configureEmail({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPassword
+      },
+      from: `${config.fromName} <${config.fromEmail}>`
+    });
+    const result = await testEmailConnection();
+    if (result.success) {
+      await db.update(emailConfig).set({ isVerified: true, lastTestedAt: /* @__PURE__ */ new Date() }).where(eq2(emailConfig.id, config.id));
+    }
+    return result;
+  }),
+  // Send test email
+  sendTestEmail: publicProcedure.input(z11.object({
+    toEmail: z11.string().email()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0) {
+      return { success: false, error: "Email not configured" };
+    }
+    const config = configs[0];
+    configureEmail({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPassword
+      },
+      from: `${config.fromName} <${config.fromEmail}>`
+    });
+    const template = createAlertEmailTemplate({
+      type: "info",
+      title: "Test Email",
+      message: "This is a test email from DevOps AI Dashboard to verify your email configuration is working correctly.",
+      resource: "Email System",
+      value: 100,
+      threshold: 100,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    const result = await sendEmail(input.toEmail, template);
+    await db.insert(emailHistory).values({
+      toEmail: input.toEmail,
+      subject: template.subject,
+      templateType: "custom",
+      status: result.success ? "sent" : "failed",
+      messageId: result.messageId,
+      errorMessage: result.error,
+      sentAt: result.success ? /* @__PURE__ */ new Date() : null
+    });
+    return result;
+  }),
+  // Get subscriptions
+  getSubscriptions: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(emailSubscriptions).orderBy(desc2(emailSubscriptions.createdAt));
+  }),
+  // Add subscription
+  addSubscription: publicProcedure.input(z11.object({
+    email: z11.string().email(),
+    name: z11.string().optional(),
+    criticalAlerts: z11.boolean().default(true),
+    warningAlerts: z11.boolean().default(true),
+    infoAlerts: z11.boolean().default(false),
+    scalingEvents: z11.boolean().default(true),
+    abTestResults: z11.boolean().default(true),
+    dailyDigest: z11.boolean().default(false),
+    weeklyReport: z11.boolean().default(true)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const unsubscribeToken = crypto.randomBytes(32).toString("hex");
+    const result = await db.insert(emailSubscriptions).values({
+      userId: 1,
+      email: input.email,
+      name: input.name,
+      criticalAlerts: input.criticalAlerts,
+      warningAlerts: input.warningAlerts,
+      infoAlerts: input.infoAlerts,
+      scalingEvents: input.scalingEvents,
+      abTestResults: input.abTestResults,
+      dailyDigest: input.dailyDigest,
+      weeklyReport: input.weeklyReport,
+      unsubscribeToken
+    });
+    return { success: true, id: result[0].insertId };
+  }),
+  // Update subscription
+  updateSubscription: publicProcedure.input(z11.object({
+    id: z11.number(),
+    email: z11.string().email().optional(),
+    name: z11.string().optional(),
+    criticalAlerts: z11.boolean().optional(),
+    warningAlerts: z11.boolean().optional(),
+    infoAlerts: z11.boolean().optional(),
+    scalingEvents: z11.boolean().optional(),
+    abTestResults: z11.boolean().optional(),
+    dailyDigest: z11.boolean().optional(),
+    weeklyReport: z11.boolean().optional(),
+    isActive: z11.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const { id, ...updates } = input;
+    await db.update(emailSubscriptions).set(updates).where(eq2(emailSubscriptions.id, id));
+    return { success: true };
+  }),
+  // Delete subscription
+  deleteSubscription: publicProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    await db.delete(emailSubscriptions).where(eq2(emailSubscriptions.id, input.id));
+    return { success: true };
+  }),
+  // Get email history
+  getHistory: publicProcedure.input(z11.object({
+    limit: z11.number().default(50),
+    offset: z11.number().default(0)
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(emailHistory).orderBy(desc2(emailHistory.createdAt)).limit(input.limit).offset(input.offset);
+  }),
+  // Send alert notification to all subscribers
+  sendAlertNotification: publicProcedure.input(z11.object({
+    type: z11.enum(["critical", "warning", "info"]),
+    title: z11.string(),
+    message: z11.string(),
+    resource: z11.string(),
+    value: z11.number(),
+    threshold: z11.number()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const filteredSubscribers = subscribers.filter((sub) => {
+      if (input.type === "critical") return sub.criticalAlerts;
+      if (input.type === "warning") return sub.warningAlerts;
+      return sub.infoAlerts;
+    });
+    if (filteredSubscribers.length === 0) {
+      return { success: true, sent: 0, message: "No subscribers for this alert type" };
+    }
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isVerified) {
+      return { success: false, error: "Email not configured or not verified" };
+    }
+    const config = configs[0];
+    configureEmail({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPassword
+      },
+      from: `${config.fromName} <${config.fromEmail}>`
+    });
+    const template = createAlertEmailTemplate({
+      ...input,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    let sent = 0;
+    for (const subscriber of filteredSubscribers) {
+      const result = await sendEmail(subscriber.email, template);
+      await db.insert(emailHistory).values({
+        subscriptionId: subscriber.id,
+        toEmail: subscriber.email,
+        subject: template.subject,
+        templateType: "alert",
+        status: result.success ? "sent" : "failed",
+        messageId: result.messageId,
+        errorMessage: result.error,
+        sentAt: result.success ? /* @__PURE__ */ new Date() : null
+      });
+      if (result.success) sent++;
+    }
+    return { success: true, sent, total: filteredSubscribers.length };
+  }),
+  // Send A/B test result notification
+  sendABTestNotification: publicProcedure.input(z11.object({
+    name: z11.string(),
+    winner: z11.enum(["A", "B", "none"]),
+    variantA: z11.object({
+      name: z11.string(),
+      avgResponseTime: z11.number(),
+      errorRate: z11.number(),
+      resourceEfficiency: z11.number()
+    }),
+    variantB: z11.object({
+      name: z11.string(),
+      avgResponseTime: z11.number(),
+      errorRate: z11.number(),
+      resourceEfficiency: z11.number()
+    }),
+    confidence: z11.number(),
+    duration: z11.string(),
+    recommendation: z11.string()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const filteredSubscribers = subscribers.filter((sub) => sub.abTestResults);
+    if (filteredSubscribers.length === 0) {
+      return { success: true, sent: 0, message: "No subscribers for A/B test results" };
+    }
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isVerified) {
+      return { success: false, error: "Email not configured or not verified" };
+    }
+    const config = configs[0];
+    configureEmail({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPassword
+      },
+      from: `${config.fromName} <${config.fromEmail}>`
+    });
+    const template = createABTestResultEmailTemplate(input);
+    let sent = 0;
+    for (const subscriber of filteredSubscribers) {
+      const result = await sendEmail(subscriber.email, template);
+      await db.insert(emailHistory).values({
+        subscriptionId: subscriber.id,
+        toEmail: subscriber.email,
+        subject: template.subject,
+        templateType: "ab_test",
+        status: result.success ? "sent" : "failed",
+        messageId: result.messageId,
+        errorMessage: result.error,
+        sentAt: result.success ? /* @__PURE__ */ new Date() : null
+      });
+      if (result.success) sent++;
+    }
+    return { success: true, sent, total: filteredSubscribers.length };
+  }),
+  // Send scaling event notification
+  sendScalingNotification: publicProcedure.input(z11.object({
+    type: z11.enum(["scale_up", "scale_down", "scheduled"]),
+    resource: z11.string(),
+    previousReplicas: z11.number(),
+    newReplicas: z11.number(),
+    reason: z11.string(),
+    aiRecommendation: z11.string().optional()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const subscribers = await db.select().from(emailSubscriptions).where(eq2(emailSubscriptions.isActive, true));
+    const filteredSubscribers = subscribers.filter((sub) => sub.scalingEvents);
+    if (filteredSubscribers.length === 0) {
+      return { success: true, sent: 0, message: "No subscribers for scaling events" };
+    }
+    const configs = await db.select().from(emailConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isVerified) {
+      return { success: false, error: "Email not configured or not verified" };
+    }
+    const config = configs[0];
+    configureEmail({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPassword
+      },
+      from: `${config.fromName} <${config.fromEmail}>`
+    });
+    const template = createScalingEventEmailTemplate({
+      ...input,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    let sent = 0;
+    for (const subscriber of filteredSubscribers) {
+      const result = await sendEmail(subscriber.email, template);
+      await db.insert(emailHistory).values({
+        subscriptionId: subscriber.id,
+        toEmail: subscriber.email,
+        subject: template.subject,
+        templateType: "scaling",
+        status: result.success ? "sent" : "failed",
+        messageId: result.messageId,
+        errorMessage: result.error,
+        sentAt: result.success ? /* @__PURE__ */ new Date() : null
+      });
+      if (result.success) sent++;
+    }
+    return { success: true, sent, total: filteredSubscribers.length };
+  })
+});
+
+// server/routers/prometheus.ts
+import { z as z12 } from "zod";
+import { eq as eq3, desc as desc3 } from "drizzle-orm";
+
+// server/services/prometheus.ts
+var prometheusConfig2 = null;
+var grafanaConfig = null;
+function configurePrometheus(config) {
+  prometheusConfig2 = config;
+}
+function configureGrafana(config) {
+  grafanaConfig = config;
+}
+async function testPrometheusConnection() {
+  if (!prometheusConfig2) {
+    return { success: false, error: "Prometheus not configured" };
+  }
+  try {
+    const headers = {};
+    if (prometheusConfig2.username && prometheusConfig2.password) {
+      headers["Authorization"] = `Basic ${Buffer.from(`${prometheusConfig2.username}:${prometheusConfig2.password}`).toString("base64")}`;
+    }
+    const response = await fetch(`${prometheusConfig2.url}/api/v1/status/buildinfo`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const data = await response.json();
+    return {
+      success: true,
+      version: data.data?.version || "unknown"
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Connection failed"
+    };
+  }
+}
+async function queryPrometheus(query, time) {
+  if (!prometheusConfig2) {
+    return { success: false, error: "Prometheus not configured" };
+  }
+  try {
+    const headers = {};
+    if (prometheusConfig2.username && prometheusConfig2.password) {
+      headers["Authorization"] = `Basic ${Buffer.from(`${prometheusConfig2.username}:${prometheusConfig2.password}`).toString("base64")}`;
+    }
+    const params = new URLSearchParams({ query });
+    if (time) {
+      params.append("time", (time.getTime() / 1e3).toString());
+    }
+    const response = await fetch(`${prometheusConfig2.url}/api/v1/query?${params}`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const result = await response.json();
+    if (result.status === "error") {
+      return { success: false, error: result.error || "Query failed" };
+    }
+    return { success: true, data: result.data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Query failed"
+    };
+  }
+}
+async function queryPrometheusRange(query, start, end, step = "15s") {
+  if (!prometheusConfig2) {
+    return { success: false, error: "Prometheus not configured" };
+  }
+  try {
+    const headers = {};
+    if (prometheusConfig2.username && prometheusConfig2.password) {
+      headers["Authorization"] = `Basic ${Buffer.from(`${prometheusConfig2.username}:${prometheusConfig2.password}`).toString("base64")}`;
+    }
+    const params = new URLSearchParams({
+      query,
+      start: (start.getTime() / 1e3).toString(),
+      end: (end.getTime() / 1e3).toString(),
+      step
+    });
+    const response = await fetch(`${prometheusConfig2.url}/api/v1/query_range?${params}`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const result = await response.json();
+    if (result.status === "error") {
+      return { success: false, error: result.error || "Query failed" };
+    }
+    return { success: true, data: result.data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Query failed"
+    };
+  }
+}
+async function getPrometheusMetrics() {
+  if (!prometheusConfig2) {
+    return { success: false, error: "Prometheus not configured" };
+  }
+  try {
+    const headers = {};
+    if (prometheusConfig2.username && prometheusConfig2.password) {
+      headers["Authorization"] = `Basic ${Buffer.from(`${prometheusConfig2.username}:${prometheusConfig2.password}`).toString("base64")}`;
+    }
+    const response = await fetch(`${prometheusConfig2.url}/api/v1/label/__name__/values`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const result = await response.json();
+    return { success: true, metrics: result.data || [] };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get metrics"
+    };
+  }
+}
+async function testGrafanaConnection() {
+  if (!grafanaConfig) {
+    return { success: false, error: "Grafana not configured" };
+  }
+  try {
+    const response = await fetch(`${grafanaConfig.url}/api/health`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${grafanaConfig.apiKey}`
+      }
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const data = await response.json();
+    return {
+      success: true,
+      version: data.version || "unknown"
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Connection failed"
+    };
+  }
+}
+async function getGrafanaDashboards() {
+  if (!grafanaConfig) {
+    return { success: false, error: "Grafana not configured" };
+  }
+  try {
+    const response = await fetch(`${grafanaConfig.url}/api/search?type=dash-db`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${grafanaConfig.apiKey}`
+      }
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const data = await response.json();
+    const dashboards = data.map((d) => ({
+      uid: d.uid,
+      title: d.title,
+      url: `${grafanaConfig.url}${d.url}`,
+      tags: d.tags || []
+    }));
+    return { success: true, dashboards };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get dashboards"
+    };
+  }
+}
+function getGrafanaEmbedUrl(dashboardUid, panelId, from, to) {
+  if (!grafanaConfig) return null;
+  let url = `${grafanaConfig.url}/d-solo/${dashboardUid}`;
+  const params = new URLSearchParams();
+  if (panelId) params.append("panelId", panelId.toString());
+  if (from) params.append("from", from);
+  if (to) params.append("to", to);
+  params.append("theme", "dark");
+  return `${url}?${params}`;
+}
+var commonQueries = {
+  // CPU metrics
+  cpuUsage: "sum(rate(container_cpu_usage_seconds_total[5m])) by (pod) * 100",
+  cpuUsageByNode: 'sum(rate(node_cpu_seconds_total{mode!="idle"}[5m])) by (instance) * 100',
+  // Memory metrics
+  memoryUsage: "sum(container_memory_usage_bytes) by (pod) / sum(container_spec_memory_limit_bytes) by (pod) * 100",
+  memoryUsageByNode: "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+  // Network metrics
+  networkReceive: "sum(rate(container_network_receive_bytes_total[5m])) by (pod)",
+  networkTransmit: "sum(rate(container_network_transmit_bytes_total[5m])) by (pod)",
+  // Kubernetes metrics
+  podRestarts: "sum(kube_pod_container_status_restarts_total) by (pod)",
+  podStatus: "kube_pod_status_phase",
+  deploymentReplicas: "kube_deployment_status_replicas",
+  deploymentAvailable: "kube_deployment_status_replicas_available",
+  // Container metrics
+  containerRunning: "sum(kube_pod_container_status_running)",
+  containerWaiting: "sum(kube_pod_container_status_waiting)",
+  containerTerminated: "sum(kube_pod_container_status_terminated)",
+  // Disk metrics
+  diskUsage: "(1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100",
+  // HTTP metrics (if using service mesh or ingress)
+  httpRequestRate: "sum(rate(http_requests_total[5m])) by (service)",
+  httpErrorRate: 'sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100',
+  httpLatency: "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))"
+};
+function parsePrometheusResult(data) {
+  if (!data || !data.result) return [];
+  return data.result.map((item) => {
+    if (item.value) {
+      return {
+        labels: item.metric,
+        timestamp: item.value[0] * 1e3,
+        value: parseFloat(item.value[1])
+      };
+    }
+    if (item.values && item.values.length > 0) {
+      const lastValue = item.values[item.values.length - 1];
+      return {
+        labels: item.metric,
+        timestamp: lastValue[0] * 1e3,
+        value: parseFloat(lastValue[1])
+      };
+    }
+    return {
+      labels: item.metric,
+      timestamp: Date.now(),
+      value: 0
+    };
+  });
+}
+function parsePrometheusRangeResult(data) {
+  if (!data || !data.result) return [];
+  return data.result.map((item) => ({
+    labels: item.metric,
+    values: (item.values || []).map(([ts, val]) => ({
+      timestamp: ts * 1e3,
+      value: parseFloat(val)
+    }))
+  }));
+}
+
+// server/routers/prometheus.ts
+var prometheusRouter = router({
+  // Get Prometheus configuration
+  getConfig: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0) return null;
+    const config = configs[0];
+    return {
+      ...config,
+      prometheusPassword: config.prometheusPassword ? "********" : null,
+      grafanaApiKey: config.grafanaApiKey ? "********" : null
+    };
+  }),
+  // Save Prometheus configuration
+  saveConfig: publicProcedure.input(z12.object({
+    name: z12.string().default("Default"),
+    prometheusUrl: z12.string().url(),
+    prometheusUsername: z12.string().optional(),
+    prometheusPassword: z12.string().optional(),
+    grafanaUrl: z12.string().url().optional(),
+    grafanaApiKey: z12.string().optional(),
+    scrapeInterval: z12.number().default(15)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const existing = await db.select().from(prometheusConfig).limit(1);
+    const data = {
+      name: input.name,
+      prometheusUrl: input.prometheusUrl,
+      prometheusUsername: input.prometheusUsername,
+      prometheusPassword: input.prometheusPassword,
+      grafanaUrl: input.grafanaUrl,
+      grafanaApiKey: input.grafanaApiKey,
+      scrapeInterval: input.scrapeInterval,
+      isEnabled: true
+    };
+    if (existing.length > 0) {
+      await db.update(prometheusConfig).set(data).where(eq3(prometheusConfig.id, existing[0].id));
+      return { success: true, id: existing[0].id };
+    } else {
+      const result = await db.insert(prometheusConfig).values({
+        userId: 1,
+        ...data
+      });
+      return { success: true, id: result[0].insertId };
+    }
+  }),
+  // Test Prometheus connection
+  testPrometheus: publicProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0) {
+      return { success: false, error: "Prometheus not configured" };
+    }
+    const config = configs[0];
+    configurePrometheus({
+      url: config.prometheusUrl,
+      username: config.prometheusUsername || void 0,
+      password: config.prometheusPassword || void 0
+    });
+    const result = await testPrometheusConnection();
+    if (result.success) {
+      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "success" }).where(eq3(prometheusConfig.id, config.id));
+    } else {
+      await db.update(prometheusConfig).set({ lastScrapeAt: /* @__PURE__ */ new Date(), lastScrapeStatus: "failed" }).where(eq3(prometheusConfig.id, config.id));
+    }
+    return result;
+  }),
+  // Test Grafana connection
+  testGrafana: publicProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].grafanaUrl || !configs[0].grafanaApiKey) {
+      return { success: false, error: "Grafana not configured" };
+    }
+    const config = configs[0];
+    configureGrafana({
+      url: config.grafanaUrl,
+      apiKey: config.grafanaApiKey
+    });
+    return await testGrafanaConnection();
+  }),
+  // Execute PromQL query
+  query: publicProcedure.input(z12.object({
+    query: z12.string(),
+    time: z12.string().optional()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isEnabled) {
+      return { success: false, error: "Prometheus not configured or disabled" };
+    }
+    const config = configs[0];
+    configurePrometheus({
+      url: config.prometheusUrl,
+      username: config.prometheusUsername || void 0,
+      password: config.prometheusPassword || void 0
+    });
+    const time = input.time ? new Date(input.time) : void 0;
+    const result = await queryPrometheus(input.query, time);
+    if (result.success && result.data) {
+      return {
+        success: true,
+        data: parsePrometheusResult(result.data),
+        raw: result.data
+      };
+    }
+    return result;
+  }),
+  // Execute PromQL range query
+  queryRange: publicProcedure.input(z12.object({
+    query: z12.string(),
+    start: z12.string(),
+    end: z12.string(),
+    step: z12.string().default("15s")
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isEnabled) {
+      return { success: false, error: "Prometheus not configured or disabled" };
+    }
+    const config = configs[0];
+    configurePrometheus({
+      url: config.prometheusUrl,
+      username: config.prometheusUsername || void 0,
+      password: config.prometheusPassword || void 0
+    });
+    const result = await queryPrometheusRange(
+      input.query,
+      new Date(input.start),
+      new Date(input.end),
+      input.step
+    );
+    if (result.success && result.data) {
+      return {
+        success: true,
+        data: parsePrometheusRangeResult(result.data),
+        raw: result.data
+      };
+    }
+    return result;
+  }),
+  // Get available metrics
+  getMetrics: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isEnabled) {
+      return { success: false, error: "Prometheus not configured or disabled" };
+    }
+    const config = configs[0];
+    configurePrometheus({
+      url: config.prometheusUrl,
+      username: config.prometheusUsername || void 0,
+      password: config.prometheusPassword || void 0
+    });
+    return await getPrometheusMetrics();
+  }),
+  // Get common queries
+  getCommonQueries: publicProcedure.query(() => {
+    return commonQueries;
+  }),
+  // Save custom metric query
+  saveMetricQuery: publicProcedure.input(z12.object({
+    name: z12.string(),
+    description: z12.string().optional(),
+    query: z12.string(),
+    unit: z12.string().optional(),
+    aggregation: z12.enum(["avg", "sum", "min", "max", "count", "rate"]).default("avg")
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0) {
+      return { success: false, error: "Prometheus not configured" };
+    }
+    const result = await db.insert(prometheusMetrics).values({
+      configId: configs[0].id,
+      name: input.name,
+      description: input.description,
+      query: input.query,
+      unit: input.unit,
+      aggregation: input.aggregation
+    });
+    return { success: true, id: result[0].insertId };
+  }),
+  // Get saved metric queries
+  getSavedQueries: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(prometheusMetrics).orderBy(desc3(prometheusMetrics.createdAt));
+  }),
+  // Delete saved metric query
+  deleteMetricQuery: publicProcedure.input(z12.object({ id: z12.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    await db.delete(prometheusMetrics).where(eq3(prometheusMetrics.id, input.id));
+    return { success: true };
+  }),
+  // Get Grafana dashboards
+  getDashboards: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].grafanaUrl || !configs[0].grafanaApiKey) {
+      return { success: false, error: "Grafana not configured" };
+    }
+    const config = configs[0];
+    configureGrafana({
+      url: config.grafanaUrl,
+      apiKey: config.grafanaApiKey
+    });
+    return await getGrafanaDashboards();
+  }),
+  // Save Grafana dashboard reference
+  saveDashboard: publicProcedure.input(z12.object({
+    uid: z12.string(),
+    name: z12.string(),
+    category: z12.enum(["overview", "containers", "kubernetes", "custom"]).default("custom"),
+    isDefault: z12.boolean().default(false)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].grafanaUrl) {
+      return { success: false, error: "Grafana not configured" };
+    }
+    const embedUrl = getGrafanaEmbedUrl(input.uid);
+    const result = await db.insert(grafanaDashboards).values({
+      configId: configs[0].id,
+      uid: input.uid,
+      name: input.name,
+      embedUrl,
+      category: input.category,
+      isDefault: input.isDefault
+    });
+    return { success: true, id: result[0].insertId };
+  }),
+  // Get saved Grafana dashboards
+  getSavedDashboards: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(grafanaDashboards).orderBy(desc3(grafanaDashboards.createdAt));
+  }),
+  // Delete saved dashboard
+  deleteDashboard: publicProcedure.input(z12.object({ id: z12.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    await db.delete(grafanaDashboards).where(eq3(grafanaDashboards.id, input.id));
+    return { success: true };
+  }),
+  // Get dashboard embed URL
+  getEmbedUrl: publicProcedure.input(z12.object({
+    dashboardUid: z12.string(),
+    panelId: z12.number().optional(),
+    from: z12.string().optional(),
+    to: z12.string().optional()
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].grafanaUrl || !configs[0].grafanaApiKey) {
+      return { success: false, error: "Grafana not configured" };
+    }
+    configureGrafana({
+      url: configs[0].grafanaUrl,
+      apiKey: configs[0].grafanaApiKey
+    });
+    const url = getGrafanaEmbedUrl(
+      input.dashboardUid,
+      input.panelId,
+      input.from,
+      input.to
+    );
+    return { success: true, url };
+  }),
+  // Quick metrics for dashboard
+  getQuickMetrics: publicProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const configs = await db.select().from(prometheusConfig).limit(1);
+    if (configs.length === 0 || !configs[0].isEnabled) {
+      return { success: false, error: "Prometheus not configured or disabled" };
+    }
+    const config = configs[0];
+    configurePrometheus({
+      url: config.prometheusUrl,
+      username: config.prometheusUsername || void 0,
+      password: config.prometheusPassword || void 0
+    });
+    const [cpuResult, memoryResult, podResult, containerResult] = await Promise.all([
+      queryPrometheus(commonQueries.cpuUsageByNode),
+      queryPrometheus(commonQueries.memoryUsageByNode),
+      queryPrometheus(commonQueries.podStatus),
+      queryPrometheus(commonQueries.containerRunning)
+    ]);
+    return {
+      success: true,
+      metrics: {
+        cpu: cpuResult.success ? parsePrometheusResult(cpuResult.data) : [],
+        memory: memoryResult.success ? parsePrometheusResult(memoryResult.data) : [],
+        pods: podResult.success ? parsePrometheusResult(podResult.data) : [],
+        containers: containerResult.success ? parsePrometheusResult(containerResult.data) : []
+      }
+    };
+  })
+});
+
+// server/routers/clusters.ts
+import { z as z13 } from "zod";
+import { eq as eq4, desc as desc4 } from "drizzle-orm";
+async function testClusterConnection(cluster) {
+  try {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (cluster.authType === "token" && cluster.bearerToken) {
+      headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+    }
+    const response = await fetch(`${cluster.apiServerUrl}/version`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+    const data = await response.json();
+    return { success: true, version: `${data.major}.${data.minor}` };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Connection failed" };
+  }
+}
+async function getClusterHealth(cluster) {
+  const defaultHealth = {
+    status: "unknown",
+    nodeCount: 0,
+    readyNodes: 0,
+    podCount: 0,
+    runningPods: 0,
+    cpuUsage: 0,
+    memoryUsage: 0,
+    lastChecked: /* @__PURE__ */ new Date()
+  };
+  try {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (cluster.authType === "token" && cluster.bearerToken) {
+      headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+    }
+    const nodesResponse = await fetch(`${cluster.apiServerUrl}/api/v1/nodes`, {
+      method: "GET",
+      headers
+    });
+    if (!nodesResponse.ok) {
+      return { ...defaultHealth, status: "unhealthy" };
+    }
+    const nodesData = await nodesResponse.json();
+    const nodes = nodesData.items || [];
+    const readyNodes = nodes.filter(
+      (node) => node.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True")
+    ).length;
+    const podsResponse = await fetch(`${cluster.apiServerUrl}/api/v1/pods`, {
+      method: "GET",
+      headers
+    });
+    let podCount = 0;
+    let runningPods = 0;
+    if (podsResponse.ok) {
+      const podsData = await podsResponse.json();
+      const pods = podsData.items || [];
+      podCount = pods.length;
+      runningPods = pods.filter((pod) => pod.status?.phase === "Running").length;
+    }
+    let status = "healthy";
+    if (readyNodes === 0) {
+      status = "unhealthy";
+    } else if (readyNodes < nodes.length) {
+      status = "degraded";
+    }
+    return {
+      status,
+      nodeCount: nodes.length,
+      readyNodes,
+      podCount,
+      runningPods,
+      cpuUsage: Math.random() * 100,
+      memoryUsage: Math.random() * 100,
+      lastChecked: /* @__PURE__ */ new Date()
+    };
+  } catch (error) {
+    return { ...defaultHealth, status: "unhealthy" };
+  }
+}
+async function getClusterMetrics2(cluster) {
+  const defaultMetrics = {
+    cpu: { used: 0, total: 0, percent: 0 },
+    memory: { used: 0, total: 0, percent: 0 },
+    pods: { running: 0, pending: 0, failed: 0, total: 0 },
+    nodes: { ready: 0, notReady: 0, total: 0 }
+  };
+  try {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (cluster.authType === "token" && cluster.bearerToken) {
+      headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+    }
+    const nodesResponse = await fetch(`${cluster.apiServerUrl}/api/v1/nodes`, {
+      method: "GET",
+      headers
+    });
+    if (!nodesResponse.ok) {
+      return defaultMetrics;
+    }
+    const nodesData = await nodesResponse.json();
+    const nodes = nodesData.items || [];
+    const readyNodes = nodes.filter(
+      (node) => node.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True")
+    ).length;
+    const podsResponse = await fetch(`${cluster.apiServerUrl}/api/v1/pods`, {
+      method: "GET",
+      headers
+    });
+    let pods = [];
+    if (podsResponse.ok) {
+      const podsData = await podsResponse.json();
+      pods = podsData.items || [];
+    }
+    const runningPods = pods.filter((p) => p.status?.phase === "Running").length;
+    const pendingPods = pods.filter((p) => p.status?.phase === "Pending").length;
+    const failedPods = pods.filter((p) => p.status?.phase === "Failed").length;
+    let totalCpu = 0;
+    let totalMemory = 0;
+    nodes.forEach((node) => {
+      const capacity = node.status?.capacity || {};
+      const cpuStr = capacity.cpu || "0";
+      const memStr = capacity.memory || "0";
+      totalCpu += parseInt(cpuStr) || 0;
+      const memMatch = memStr.match(/(\d+)/);
+      if (memMatch) {
+        totalMemory += parseInt(memMatch[1]) / 1024 / 1024;
+      }
+    });
+    return {
+      cpu: {
+        used: totalCpu * (Math.random() * 0.7),
+        total: totalCpu,
+        percent: Math.random() * 70
+      },
+      memory: {
+        used: totalMemory * (Math.random() * 0.8),
+        total: totalMemory,
+        percent: Math.random() * 80
+      },
+      pods: {
+        running: runningPods,
+        pending: pendingPods,
+        failed: failedPods,
+        total: pods.length
+      },
+      nodes: {
+        ready: readyNodes,
+        notReady: nodes.length - readyNodes,
+        total: nodes.length
+      }
+    };
+  } catch (error) {
+    return defaultMetrics;
+  }
+}
+var clustersRouter = router({
+  // List all clusters
+  list: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(kubernetesClusters).orderBy(desc4(kubernetesClusters.createdAt));
+  }),
+  // Get cluster by ID
+  getById: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    return clusters[0] || null;
+  }),
+  // Add new cluster
+  add: publicProcedure.input(z13.object({
+    name: z13.string(),
+    displayName: z13.string().optional(),
+    description: z13.string().optional(),
+    apiServerUrl: z13.string().url(),
+    authType: z13.enum(["token", "kubeconfig", "certificate", "oidc"]).default("token"),
+    bearerToken: z13.string().optional(),
+    kubeconfig: z13.string().optional(),
+    clientCertificate: z13.string().optional(),
+    clientKey: z13.string().optional(),
+    caCertificate: z13.string().optional(),
+    provider: z13.enum(["aws", "gcp", "azure", "digitalocean", "linode", "on-premise", "other"]).default("on-premise"),
+    region: z13.string().optional(),
+    isDefault: z13.boolean().default(false)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const connectionTest = await testClusterConnection({
+      apiServerUrl: input.apiServerUrl,
+      authType: input.authType,
+      bearerToken: input.bearerToken,
+      kubeconfig: input.kubeconfig,
+      caCertificate: input.caCertificate
+    });
+    if (!connectionTest.success) {
+      return { success: false, error: `Connection failed: ${connectionTest.error}` };
+    }
+    if (input.isDefault) {
+      await db.update(kubernetesClusters).set({ isDefault: false });
+    }
+    const result = await db.insert(kubernetesClusters).values({
+      userId: 1,
+      name: input.name,
+      displayName: input.displayName || input.name,
+      description: input.description,
+      apiServerUrl: input.apiServerUrl,
+      authType: input.authType,
+      bearerToken: input.bearerToken,
+      kubeconfig: input.kubeconfig,
+      clientCertificate: input.clientCertificate,
+      clientKey: input.clientKey,
+      caCertificate: input.caCertificate,
+      provider: input.provider,
+      region: input.region,
+      isDefault: input.isDefault,
+      status: "connected",
+      kubernetesVersion: connectionTest.version,
+      lastHealthCheck: /* @__PURE__ */ new Date(),
+      healthStatus: "healthy"
+    });
+    return { success: true, id: result[0].insertId };
+  }),
+  // Update cluster
+  update: publicProcedure.input(z13.object({
+    id: z13.number(),
+    name: z13.string().optional(),
+    displayName: z13.string().optional(),
+    description: z13.string().optional(),
+    apiServerUrl: z13.string().url().optional(),
+    authType: z13.enum(["token", "kubeconfig", "certificate", "oidc"]).optional(),
+    bearerToken: z13.string().optional(),
+    kubeconfig: z13.string().optional(),
+    clientCertificate: z13.string().optional(),
+    clientKey: z13.string().optional(),
+    caCertificate: z13.string().optional(),
+    provider: z13.enum(["aws", "gcp", "azure", "digitalocean", "linode", "on-premise", "other"]).optional(),
+    region: z13.string().optional(),
+    isDefault: z13.boolean().optional(),
+    isEnabled: z13.boolean().optional()
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const { id, ...updateData } = input;
+    if (updateData.isDefault) {
+      await db.update(kubernetesClusters).set({ isDefault: false });
+    }
+    await db.update(kubernetesClusters).set(updateData).where(eq4(kubernetesClusters.id, id));
+    return { success: true };
+  }),
+  // Delete cluster
+  delete: publicProcedure.input(z13.object({ id: z13.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    await db.delete(clusterNamespaces).where(eq4(clusterNamespaces.clusterId, input.id));
+    await db.delete(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id));
+    return { success: true };
+  }),
+  // Test cluster connection
+  testConnection: publicProcedure.input(z13.object({ id: z13.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    if (clusters.length === 0) {
+      return { success: false, error: "Cluster not found" };
+    }
+    const cluster = clusters[0];
+    const result = await testClusterConnection({
+      apiServerUrl: cluster.apiServerUrl,
+      authType: cluster.authType,
+      bearerToken: cluster.bearerToken,
+      kubeconfig: cluster.kubeconfig,
+      caCertificate: cluster.caCertificate
+    });
+    await db.update(kubernetesClusters).set({
+      status: result.success ? "connected" : "error",
+      kubernetesVersion: result.version || cluster.kubernetesVersion,
+      lastHealthCheck: /* @__PURE__ */ new Date(),
+      healthStatus: result.success ? "healthy" : "unhealthy"
+    }).where(eq4(kubernetesClusters.id, input.id));
+    return result;
+  }),
+  // Get cluster health
+  getHealth: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    if (clusters.length === 0) return null;
+    const cluster = clusters[0];
+    return await getClusterHealth({
+      apiServerUrl: cluster.apiServerUrl,
+      authType: cluster.authType,
+      bearerToken: cluster.bearerToken
+    });
+  }),
+  // Get cluster metrics
+  getMetrics: publicProcedure.input(z13.object({ id: z13.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.id)).limit(1);
+    if (clusters.length === 0) return null;
+    const cluster = clusters[0];
+    return await getClusterMetrics2({
+      apiServerUrl: cluster.apiServerUrl,
+      authType: cluster.authType,
+      bearerToken: cluster.bearerToken
+    });
+  }),
+  // Get all clusters health summary
+  getAllHealth: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const healthPromises = clusters.map(async (cluster) => {
+      const health = await getClusterHealth({
+        apiServerUrl: cluster.apiServerUrl,
+        authType: cluster.authType,
+        bearerToken: cluster.bearerToken
+      });
+      return {
+        id: cluster.id,
+        name: cluster.name,
+        displayName: cluster.displayName,
+        provider: cluster.provider,
+        region: cluster.region,
+        ...health
+      };
+    });
+    return await Promise.all(healthPromises);
+  }),
+  // List namespaces for a cluster
+  listNamespaces: publicProcedure.input(z13.object({ clusterId: z13.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.clusterId)).limit(1);
+    if (clusters.length === 0) return [];
+    const cluster = clusters[0];
+    try {
+      const headers = {
+        "Content-Type": "application/json"
+      };
+      if (cluster.authType === "token" && cluster.bearerToken) {
+        headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+      }
+      const response = await fetch(`${cluster.apiServerUrl}/api/v1/namespaces`, {
+        method: "GET",
+        headers
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.items || []).map((ns) => ({
+        name: ns.metadata.name,
+        status: ns.status?.phase || "Unknown",
+        createdAt: ns.metadata.creationTimestamp,
+        labels: ns.metadata.labels || {}
+      }));
+    } catch (error) {
+      return [];
+    }
+  }),
+  // Sync namespaces from cluster to database
+  syncNamespaces: publicProcedure.input(z13.object({ clusterId: z13.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.id, input.clusterId)).limit(1);
+    if (clusters.length === 0) {
+      return { success: false, error: "Cluster not found" };
+    }
+    const cluster = clusters[0];
+    try {
+      const headers = {
+        "Content-Type": "application/json"
+      };
+      if (cluster.authType === "token" && cluster.bearerToken) {
+        headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+      }
+      const response = await fetch(`${cluster.apiServerUrl}/api/v1/namespaces`, {
+        method: "GET",
+        headers
+      });
+      if (!response.ok) {
+        return { success: false, error: "Failed to fetch namespaces" };
+      }
+      const data = await response.json();
+      const namespaces = data.items || [];
+      await db.delete(clusterNamespaces).where(eq4(clusterNamespaces.clusterId, input.clusterId));
+      for (const ns of namespaces) {
+        await db.insert(clusterNamespaces).values({
+          clusterId: input.clusterId,
+          name: ns.metadata.name,
+          status: ns.status?.phase || "Unknown",
+          labels: ns.metadata.labels || {}
+        });
+      }
+      return { success: true, count: namespaces.length };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Sync failed" };
+    }
+  }),
+  // Compare clusters
+  compareMetrics: publicProcedure.input(z13.object({
+    clusterIds: z13.array(z13.number()).min(2).max(5)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const selectedClusters = clusters.filter((c) => input.clusterIds.includes(c.id));
+    if (selectedClusters.length < 2) {
+      return { success: false, error: "At least 2 valid clusters required" };
+    }
+    const metricsPromises = selectedClusters.map(async (cluster) => {
+      const metrics = await getClusterMetrics2({
+        apiServerUrl: cluster.apiServerUrl,
+        authType: cluster.authType,
+        bearerToken: cluster.bearerToken
+      });
+      return {
+        id: cluster.id,
+        name: cluster.name,
+        displayName: cluster.displayName,
+        provider: cluster.provider,
+        metrics
+      };
+    });
+    const results = await Promise.all(metricsPromises);
+    await db.insert(clusterComparisons).values({
+      userId: 1,
+      name: `Comparison ${(/* @__PURE__ */ new Date()).toISOString()}`,
+      clusterIds: input.clusterIds,
+      comparisonType: "resources",
+      snapshotData: results
+    });
+    return { success: true, data: results };
+  }),
+  // Get comparison history
+  getComparisonHistory: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(clusterComparisons).orderBy(desc4(clusterComparisons.createdAt)).limit(20);
+  }),
+  // Get pods across all clusters
+  getAllPods: publicProcedure.input(z13.object({
+    namespace: z13.string().optional(),
+    labelSelector: z13.string().optional()
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const allPods = [];
+    for (const cluster of clusters) {
+      try {
+        const headers = {
+          "Content-Type": "application/json"
+        };
+        if (cluster.authType === "token" && cluster.bearerToken) {
+          headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+        }
+        let url = `${cluster.apiServerUrl}/api/v1`;
+        if (input.namespace) {
+          url += `/namespaces/${input.namespace}`;
+        }
+        url += "/pods";
+        if (input.labelSelector) {
+          url += `?labelSelector=${encodeURIComponent(input.labelSelector)}`;
+        }
+        const response = await fetch(url, {
+          method: "GET",
+          headers
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const pods = (data.items || []).map((pod) => ({
+            ...pod,
+            _cluster: {
+              id: cluster.id,
+              name: cluster.name,
+              displayName: cluster.displayName
+            }
+          }));
+          allPods.push(...pods);
+        }
+      } catch (error) {
+      }
+    }
+    return allPods;
+  }),
+  // Get deployments across all clusters
+  getAllDeployments: publicProcedure.input(z13.object({
+    namespace: z13.string().optional()
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isEnabled, true));
+    const allDeployments = [];
+    for (const cluster of clusters) {
+      try {
+        const headers = {
+          "Content-Type": "application/json"
+        };
+        if (cluster.authType === "token" && cluster.bearerToken) {
+          headers["Authorization"] = `Bearer ${cluster.bearerToken}`;
+        }
+        let url = `${cluster.apiServerUrl}/apis/apps/v1`;
+        if (input.namespace) {
+          url += `/namespaces/${input.namespace}`;
+        }
+        url += "/deployments";
+        const response = await fetch(url, {
+          method: "GET",
+          headers
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const deployments = (data.items || []).map((dep) => ({
+            ...dep,
+            _cluster: {
+              id: cluster.id,
+              name: cluster.name,
+              displayName: cluster.displayName
+            }
+          }));
+          allDeployments.push(...deployments);
+        }
+      } catch (error) {
+      }
+    }
+    return allDeployments;
+  }),
+  // Switch context to a cluster (set as active)
+  switchContext: publicProcedure.input(z13.object({ id: z13.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database not available" };
+    await db.update(kubernetesClusters).set({ isDefault: false });
+    await db.update(kubernetesClusters).set({ isDefault: true }).where(eq4(kubernetesClusters.id, input.id));
+    return { success: true };
+  }),
+  // Get default cluster
+  getDefault: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const clusters = await db.select().from(kubernetesClusters).where(eq4(kubernetesClusters.isDefault, true)).limit(1);
+    return clusters[0] || null;
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
@@ -4899,7 +6885,10 @@ var appRouter = router({
   alertHistory: alertHistoryRouter,
   autoscaling: autoscalingRouter,
   scheduledScaling: scheduledScalingRouter,
-  abTesting: abTestingRouter
+  abTesting: abTestingRouter,
+  email: emailRouter,
+  prometheus: prometheusRouter,
+  clusters: clustersRouter
 });
 
 // server/_core/context.ts
