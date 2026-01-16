@@ -448,6 +448,151 @@ Chaos experiments can be triggered via GitHub Actions with configurable experime
 
 See `docs/CHAOS-ENGINEERING.md` for detailed documentation.
 
+### Terraform State Visualization
+
+Interactive graph visualization of Terraform infrastructure resources using D3.js.
+
+**Features:**
+- **Force-directed graph** — Visual representation of resource dependencies
+- **Provider color coding** — AWS (orange), GCP (blue), Azure (purple), Kubernetes (blue)
+- **Interactive controls** — Zoom, pan, drag nodes, click for details
+- **Resource filtering** — Filter by provider, type, or search by name
+- **Dependency tracking** — Visual links showing resource relationships
+- **State parsing** — Automatic parsing of terraform.tfstate files
+
+**Usage:**
+```tsx
+import { TerraformGraph } from '@/components/TerraformGraph';
+import { parseTerraformState } from '@/server/terraform';
+
+// Parse state file
+const graphData = parseTerraformState(terraformStateJson);
+
+// Render interactive graph
+<TerraformGraph
+  data={graphData}
+  onNodeClick={(node) => console.log('Selected:', node)}
+/>
+```
+
+**Supported Providers:**
+| Provider | Icon | Color | Resources |
+|----------|------|-------|----------|
+| AWS | ☁️ | #FF9900 | EC2, RDS, S3, Lambda, etc. |
+| GCP | 🔷 | #4285F4 | Compute, Cloud SQL, GCS, etc. |
+| Azure | 🔶 | #0078D4 | VMs, SQL, Storage, etc. |
+| Kubernetes | ⚓ | #326CE5 | Deployments, Services, etc. |
+
+### ArgoCD GitOps Integration
+
+Full integration with ArgoCD for GitOps-based continuous deployment.
+
+**Features:**
+- **Application listing** — View all ArgoCD applications with health/sync status
+- **Sync operations** — Trigger manual sync with optional revision targeting
+- **Rollback support** — Rollback to any previous deployment revision
+- **Resource tree** — View Kubernetes resources managed by each application
+- **Real-time status** — Health and sync status with color indicators
+
+**API Client Usage:**
+```typescript
+import { ArgoCDClient } from '@/server/argocd';
+
+const client = new ArgoCDClient({
+  serverUrl: 'https://argocd.example.com',
+  token: process.env.ARGOCD_TOKEN,
+});
+
+// List applications
+const apps = await client.listApplications();
+
+// Sync application
+await client.syncApplication('my-app', {
+  revision: 'main',
+  prune: true,
+});
+
+// Rollback to previous revision
+await client.rollbackApplication('my-app', 5);
+```
+
+**Status Colors:**
+| Health Status | Color | Description |
+|--------------|-------|-------------|
+| Healthy | 🟢 Green | All resources healthy |
+| Progressing | 🔵 Blue | Deployment in progress |
+| Degraded | 🔴 Red | Some resources unhealthy |
+| Suspended | 🟡 Yellow | Application suspended |
+| Missing | ⚫ Gray | Resources not found |
+
+### Cloud Cost Monitoring
+
+Unified cost tracking across AWS, GCP, and Azure with AI-powered recommendations.
+
+**Features:**
+- **Multi-cloud support** — AWS Cost Explorer, GCP Billing, Azure Cost Management
+- **Cost breakdown** — By service, region, and custom tags
+- **Budget tracking** — Set limits and receive threshold alerts
+- **Forecasting** — Predict future costs based on usage patterns
+- **AI recommendations** — Rightsizing, reserved instances, unused resources
+- **Cost alerts** — Budget thresholds, anomaly detection, cost spikes
+
+**Usage:**
+```typescript
+import { CostMonitoringService } from '@/server/cost-monitoring';
+
+const costService = new CostMonitoringService({
+  aws: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+  gcp: {
+    projectId: process.env.GCP_PROJECT_ID,
+    credentials: process.env.GCP_CREDENTIALS,
+  },
+  azure: {
+    subscriptionId: process.env.AZURE_SUBSCRIPTION_ID,
+    tenantId: process.env.AZURE_TENANT_ID,
+    clientId: process.env.AZURE_CLIENT_ID,
+    clientSecret: process.env.AZURE_CLIENT_SECRET,
+  },
+});
+
+// Get all costs
+const costs = await costService.getAllCosts('2024-01-01', '2024-01-31');
+
+// Get total across providers
+const total = await costService.getTotalCost('2024-01-01', '2024-01-31');
+
+// Get cost alerts
+const alerts = await costService.getAlerts();
+```
+
+**Cost Recommendations:**
+| Category | Description | Typical Savings |
+|----------|-------------|----------------|
+| Rightsizing | Downsize underutilized instances | 20-40% |
+| Reserved Instances | Commit to 1-3 year terms | 30-60% |
+| Unused Resources | Delete orphaned disks, IPs | 5-15% |
+| Spot/Preemptible | Use for fault-tolerant workloads | 60-90% |
+
+**Environment Variables:**
+```bash
+# AWS
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
+# GCP
+GCP_PROJECT_ID=your-project-id
+GCP_CREDENTIALS='{"type":"service_account",...}'
+
+# Azure
+AZURE_SUBSCRIPTION_ID=your-subscription-id
+AZURE_TENANT_ID=your-tenant-id
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+```
+
 ## Code Quality
 
 The codebase follows best practices:

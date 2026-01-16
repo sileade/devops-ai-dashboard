@@ -344,3 +344,39 @@
 - [x] Update README with Grafana setup guide
 - [x] Update README with alerting configuration
 - [x] Update README with chaos engineering guide
+
+
+## Phase 25: Terraform Visualization, GitOps & Cost Monitoring
+
+### Terraform State Visualization
+- [x] Create Terraform state parser service
+- [x] Build D3.js resource dependency graph component
+- [x] Add resource type icons and styling
+- [x] Implement zoom/pan controls for graph
+- [x] Add resource details panel on click
+- [x] Add resource filtering by provider/type
+- [x] Add zoom controls and reset button
+
+### GitOps with ArgoCD Integration
+- [x] Create ArgoCD API client service
+- [x] Add application sync status monitoring
+- [x] Implement sync/rollback controls
+- [x] Add resource tree view
+- [x] Create deployment history view
+- [x] Add health status indicators
+- [x] Add mock data for demo/testing
+
+### Cost Monitoring
+- [x] Create cost monitoring service abstraction
+- [x] Implement AWS Cost Explorer integration
+- [x] Implement GCP Billing API integration
+- [x] Implement Azure Cost Management integration
+- [x] Add cost breakdown by service/region
+- [x] Implement cost alerts and budgets
+- [x] Add cost forecasting
+- [x] Add AI-powered cost recommendations
+
+### Documentation
+- [x] Update README with Terraform visualization guide
+- [x] Update README with ArgoCD integration guide
+- [x] Update README with cost monitoring setup
