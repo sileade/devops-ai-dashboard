@@ -468,24 +468,106 @@ pnpm test server/auth.logout.test.ts
 
 The project uses Playwright for end-to-end testing of critical user flows.
 
-### Run E2E Tests
+### Local Development Setup
+
+Before running E2E tests locally, complete the initial setup:
 
 ```bash
-# Run all E2E tests
+# 1. Install Playwright browsers (first time only)
+npx playwright install chromium
+
+# 2. Start the development server in a separate terminal
+pnpm dev
+
+# 3. Wait for the server to be ready (http://localhost:3000)
+```
+
+### Running E2E Tests
+
+```bash
+# Run all E2E tests (headless mode)
 pnpm test:e2e
 
-# Run with UI mode (interactive)
+# Run with UI mode (interactive debugging)
 pnpm test:e2e:ui
+
+# Run with visible browser (headed mode)
+npx playwright test --headed
 
 # Run specific test file
 npx playwright test e2e/dashboard.spec.ts
 
+# Run tests matching a pattern
+npx playwright test -g "should display"
+
+# Run tests in debug mode (step through)
+npx playwright test --debug
+
 # Run against staging environment
 E2E_BASE_URL=https://staging.example.com pnpm test:e2e
 
-# View test report
-pnpm test:e2e:report
+# Run with specific browser
+npx playwright test --project=chromium
+npx playwright test --project=firefox
+npx playwright test --project=webkit
 ```
+
+### Viewing Test Results
+
+```bash
+# View HTML test report
+pnpm test:e2e:report
+
+# Open last test report manually
+npx playwright show-report
+
+# View trace for failed tests (after running with --trace on)
+npx playwright show-trace test-results/*/trace.zip
+```
+
+### Writing New E2E Tests
+
+Create new test files in the `e2e/` directory:
+
+```typescript
+// e2e/my-feature.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('My Feature', () => {
+  test.beforeEach(async ({ page }) => {
+    // Navigate to the page before each test
+    await page.goto('/');
+  });
+
+  test('should display feature element', async ({ page }) => {
+    // Wait for element to be visible
+    await expect(page.locator('[data-testid="my-element"]')).toBeVisible();
+  });
+
+  test('should interact with feature', async ({ page }) => {
+    // Click and verify
+    await page.click('button[name="action"]');
+    await expect(page.locator('.result')).toContainText('Success');
+  });
+});
+```
+
+### Useful Playwright Commands
+
+| Command | Description |
+|---------|-------------|
+| `npx playwright codegen` | Record tests by interacting with browser |
+| `npx playwright test --ui` | Open interactive test runner |
+| `npx playwright test --trace on` | Record trace for debugging |
+| `npx playwright test --update-snapshots` | Update visual snapshots |
+| `npx playwright install` | Install all browsers |
+
+### Debugging Tips
+
+1. **Use `page.pause()`** - Add `await page.pause();` in your test to pause execution and inspect the page
+2. **Use Playwright Inspector** - Run with `--debug` flag to step through tests
+3. **Check screenshots** - Failed tests save screenshots in `test-results/` directory
+4. **Use trace viewer** - Run with `--trace on` and view traces for detailed debugging
 
 ### E2E Test Suites
 
@@ -501,11 +583,12 @@ pnpm test:e2e:report
 
 Playwright is configured in `playwright.config.ts` with:
 
-- Chromium browser testing
-- Automatic dev server startup
+- Chromium browser testing (Firefox and WebKit available)
+- Automatic dev server startup on port 3000
 - Screenshot on failure
 - Video recording on retry
-- HTML and JSON reports
+- HTML and JSON reports in `playwright-report/`
+- 30 second default timeout per test
 
 ## Code Statistics
 
