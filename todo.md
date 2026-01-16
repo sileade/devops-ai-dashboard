@@ -475,3 +475,25 @@
 ### Documentation
 - [x] Update README with multi-tenancy docs
 - [x] Add audit log documentation
+
+
+## Phase 16: Real-time Notifications & PDF Reports
+
+### WebSocket Real-time Notifications
+- [x] Create WebSocket service for audit log events
+- [x] Implement notification channels (critical, warning, info)
+- [ ] Add client-side WebSocket hook for real-time updates
+- [ ] Create notification toast/popup component
+- [ ] Add notification center with history
+- [x] Implement notification preferences per user
+
+### PDF Report Export
+- [ ] Create PDF generation service with charts
+- [ ] Add team analytics report template
+- [ ] Add audit log summary report template
+- [ ] Implement chart rendering for PDF (CPU, Memory, Activity)
+- [ ] Add scheduled report generation
+- [ ] Create report download UI
+
+### Documentation
+- [ ] Update README with WebSocket and PDF features

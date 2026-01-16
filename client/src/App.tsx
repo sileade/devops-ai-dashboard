@@ -31,6 +31,7 @@ import ChatBot from "./pages/ChatBot";
 import BlueGreen from "./pages/BlueGreen";
 import Teams from "./pages/Teams";
 import AuditLog from "./pages/AuditLog";
+import Reports from "./pages/Reports";
 
 function Router() {
   return (
@@ -62,6 +63,7 @@ function Router() {
         <Route path="/bluegreen" component={BlueGreen} />
         <Route path="/teams" component={Teams} />
         <Route path="/audit-log" component={AuditLog} />
+        <Route path="/reports" component={Reports} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

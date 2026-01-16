@@ -24,3 +24,4 @@ export { chatBotRouter } from "./chatbot";
 export { blueGreenRouter } from "./bluegreen";
 export { teamsRouter } from "./teams";
 export { auditLogRouter } from "./auditLog";
+export { reportsRouter } from "./reports";

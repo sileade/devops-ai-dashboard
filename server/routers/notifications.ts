@@ -1,6 +1,37 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getActiveAlerts, acknowledgeAlert, getMetricsHistory } from "../_core/websocket";
+import {
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  getUnreadCount,
+  clearNotifications,
+  createNotification,
+  sendNotificationToUser,
+  sendNotificationToTeam,
+  broadcastNotification,
+  type NotificationCategory,
+  type NotificationPriority,
+} from "../services/realtimeNotifications";
+
+const notificationCategorySchema = z.enum([
+  "security",
+  "deployment",
+  "scaling",
+  "error",
+  "team",
+  "system",
+  "audit",
+]);
+
+const notificationPrioritySchema = z.enum([
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+]);
 
 /**
  * Notifications router
@@ -91,5 +122,112 @@ export const notificationsRouter = router({
       // In a real implementation, this would save to database
       console.log("Notification settings updated:", input);
       return { success: true };
+    }),
+
+  // ============================================
+  // REAL-TIME NOTIFICATIONS
+  // ============================================
+
+  // Get user real-time notifications
+  listRealtime: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).optional().default(50),
+        unreadOnly: z.boolean().optional().default(false),
+        categories: z.array(notificationCategorySchema).optional(),
+        priorities: z.array(notificationPrioritySchema).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const notifications = getUserNotifications(ctx.user.id, {
+        limit: input.limit,
+        unreadOnly: input.unreadOnly,
+        categories: input.categories as NotificationCategory[] | undefined,
+        priorities: input.priorities as NotificationPriority[] | undefined,
+      });
+
+      return {
+        notifications,
+        total: notifications.length,
+        unreadCount: getUnreadCount(ctx.user.id),
+      };
+    }),
+
+  // Get unread count
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    return {
+      count: getUnreadCount(ctx.user.id),
+    };
+  }),
+
+  // Mark notification as read
+  markAsRead: protectedProcedure
+    .input(z.object({ notificationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const success = markNotificationAsRead(ctx.user.id, input.notificationId);
+      return { success };
+    }),
+
+  // Mark all notifications as read
+  markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
+    const count = markAllNotificationsAsRead(ctx.user.id);
+    return { markedCount: count };
+  }),
+
+  // Clear all notifications
+  clearAll: protectedProcedure.mutation(async ({ ctx }) => {
+    clearNotifications(ctx.user.id);
+    return { success: true };
+  }),
+
+  // Send test notification
+  sendTest: protectedProcedure
+    .input(
+      z.object({
+        type: notificationCategorySchema.optional().default("system"),
+        priority: notificationPrioritySchema.optional().default("info"),
+        title: z.string().optional().default("Test Notification"),
+        message: z.string().optional().default("This is a test notification"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const notification = createNotification({
+        type: input.type as NotificationCategory,
+        priority: input.priority as NotificationPriority,
+        title: input.title,
+        message: input.message,
+        userId: ctx.user.id,
+      });
+
+      await sendNotificationToUser(ctx.user.id, notification);
+      return { success: true, notification };
+    }),
+
+  // Admin: Broadcast notification
+  broadcast: protectedProcedure
+    .input(
+      z.object({
+        type: notificationCategorySchema,
+        priority: notificationPrioritySchema,
+        title: z.string(),
+        message: z.string(),
+        actionUrl: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        throw new Error("Admin access required");
+      }
+
+      const notification = createNotification({
+        type: input.type as NotificationCategory,
+        priority: input.priority as NotificationPriority,
+        title: input.title,
+        message: input.message,
+        actionUrl: input.actionUrl,
+      });
+
+      const sentCount = await broadcastNotification(notification);
+      return { success: true, deliveredCount: sentCount };
     }),
 });

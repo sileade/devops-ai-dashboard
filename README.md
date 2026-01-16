@@ -632,6 +632,67 @@ Comprehensive audit logging for tracking all user activities:
 | `auditLog.getSessions` | Get user sessions |
 | `auditLog.invalidateSession` | Invalidate a session |
 
+## Real-time Notifications (NEW)
+
+The platform includes a WebSocket-based real-time notification system:
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Live Updates** | WebSocket connection for instant notifications |
+| **Notification Channels** | Critical, warning, info, and success levels |
+| **Sound Alerts** | Audio notifications for critical events |
+| **Notification Center** | Centralized notification management |
+| **Filtering** | Filter by type, read status, and source |
+| **Preferences** | Per-user notification settings |
+
+### Notification Types
+
+- **Critical**: High CPU/memory alerts, deployment failures, security incidents
+- **Warning**: Pending approvals, resource thresholds, degraded services
+- **Info**: Team updates, configuration changes, scheduled events
+- **Success**: Completed deployments, successful tests, resolved issues
+
+### Integration
+
+Notifications are automatically triggered by:
+- Audit log events (critical and high-risk)
+- Deployment status changes
+- Auto-scaling actions
+- Security anomaly detection
+- Team membership changes
+
+## PDF Reports (NEW)
+
+Generate comprehensive PDF reports with charts and AI analysis:
+
+### Report Types
+
+| Type | Description |
+|------|-------------|
+| **Team Analytics** | Team activity, member contributions, resource usage |
+| **Audit Summary** | Security events, user actions, compliance overview |
+| **Security Report** | Threat analysis, vulnerability assessment, recommendations |
+| **Deployment Report** | Deployment history, success rates, rollback analysis |
+| **Activity Report** | System activity, API usage, performance metrics |
+
+### Features
+
+- **SVG Charts**: Visual data representation with bar, line, and pie charts
+- **AI Analysis**: Intelligent insights and recommendations
+- **Date Range Selection**: Custom or preset time periods
+- **Team Filtering**: Generate reports for specific teams
+- **Export Options**: Download as HTML, print to PDF
+
+### Usage
+
+1. Navigate to **Reports** in the sidebar
+2. Select a report type
+3. Choose date range and options
+4. Click "Generate Report"
+5. Preview, print, or download
+
 ## Testing
 
 Run the test suite:
@@ -650,13 +711,13 @@ The project includes 64 tests covering:
 
 | Metric | Value |
 |--------|-------|
-| Total Lines of Code | 31,652 |
+| Total Lines of Code | 35,000+ |
 | TypeScript/TSX Files | 147 |
-| Server Routers | 16 modules |
-| Client Pages | 22 pages |
+| Server Routers | 18 modules |
+| Client Pages | 24 pages |
 | UI Components | 40+ |
-| Database Tables | 22 |
-| API Endpoints | 80+ |
+| Database Tables | 28 |
+| API Endpoints | 100+ |
 | Test Cases | 64 |
 
 ## Code Quality

@@ -26,6 +26,7 @@ import {
   blueGreenRouter,
   teamsRouter,
   auditLogRouter,
+  reportsRouter,
 } from "./routers/index";
 
 /**
@@ -67,6 +68,7 @@ export const appRouter = router({
   bluegreen: blueGreenRouter,
   teams: teamsRouter,
   auditLog: auditLogRouter,
+  reports: reportsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -51,6 +51,7 @@ import {
   ArrowLeftRight,
   Users,
   FileText,
+  FileBarChart,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -113,6 +114,7 @@ const menuItems: MenuItem[] = [
   { icon: MessageSquare, label: "Chat Bot", path: "/chatbot" },
   { icon: Users, label: "Teams", path: "/teams" },
   { icon: FileText, label: "Audit Log", path: "/audit-log" },
+  { icon: FileBarChart, label: "Reports", path: "/reports" },
   {
     icon: Settings,
     label: "Settings",
