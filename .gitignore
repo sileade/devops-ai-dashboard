@@ -4,5 +4,3 @@ node_modules/
 dist/
 *.log
 .pnpm-store/
-playwright-report/
-test-results/

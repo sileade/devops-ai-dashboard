@@ -278,7 +278,7 @@ describe("AI Assistant API", () => {
     expect(result).toHaveProperty("available");
     expect(result).toHaveProperty("model");
     expect(result).toHaveProperty("provider");
-  }, 10000);
+  });
 
   it("suggests commands for docker", async () => {
     const ctx = createMockContext();

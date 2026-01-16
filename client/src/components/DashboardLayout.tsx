@@ -42,16 +42,6 @@ import {
   Scale,
   Calendar,
   FlaskConical,
-  Globe,
-  Mail,
-  Activity,
-  Rocket,
-  Bird,
-  MessageSquare,
-  ArrowLeftRight,
-  Users,
-  FileText,
-  FileBarChart,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -106,15 +96,6 @@ const menuItems: MenuItem[] = [
     ],
   },
   { icon: GitBranch, label: "Topology", path: "/topology" },
-  { icon: Globe, label: "Clusters", path: "/clusters" },
-  { icon: Rocket, label: "GitOps", path: "/gitops" },
-  { icon: Bird, label: "Canary Deployments", path: "/canary" },
-  { icon: ArrowLeftRight, label: "Blue-Green", path: "/bluegreen" },
-  { icon: GitBranch, label: "ArgoCD", path: "/argocd" },
-  { icon: MessageSquare, label: "Chat Bot", path: "/chatbot" },
-  { icon: Users, label: "Teams", path: "/teams" },
-  { icon: FileText, label: "Audit Log", path: "/audit-log" },
-  { icon: FileBarChart, label: "Reports", path: "/reports" },
   {
     icon: Settings,
     label: "Settings",
@@ -122,8 +103,6 @@ const menuItems: MenuItem[] = [
     children: [
       { icon: Settings, label: "General", path: "/settings" },
       { icon: Bell, label: "Alert Thresholds", path: "/settings/alerts" },
-      { icon: Mail, label: "Email", path: "/settings/email" },
-      { icon: Activity, label: "Prometheus", path: "/settings/prometheus" },
     ],
   },
 ];

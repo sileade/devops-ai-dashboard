@@ -14,14 +14,3 @@ export { metricsRouter, alertThresholdsRouter, alertHistoryRouter } from "./metr
 export { autoscalingRouter } from "./autoscaling";
 export { scheduledScalingRouter } from "./scheduledScaling";
 export { abTestingRouter } from "./abTesting";
-export { emailRouter } from "./email";
-export { prometheusRouter } from "./prometheus";
-export { clustersRouter } from "./clusters";
-export { healthRouter } from "./health";
-export { canaryRouter } from "./canary";
-export { argoCDRouter } from "./argocd";
-export { chatBotRouter } from "./chatbot";
-export { blueGreenRouter } from "./bluegreen";
-export { teamsRouter } from "./teams";
-export { auditLogRouter } from "./auditLog";
-export { reportsRouter } from "./reports";

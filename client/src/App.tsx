@@ -21,17 +21,6 @@ import AlertSettings from "./pages/AlertSettings";
 import AutoScaling from "./pages/AutoScaling";
 import ScheduledScaling from "./pages/ScheduledScaling";
 import ABTesting from "./pages/ABTesting";
-import Clusters from "./pages/Clusters";
-import EmailSettings from "./pages/EmailSettings";
-import PrometheusSettings from "./pages/PrometheusSettings";
-import GitOps from "./pages/GitOps";
-import CanaryDeployments from "./pages/CanaryDeployments";
-import ArgoCD from "./pages/ArgoCD";
-import ChatBot from "./pages/ChatBot";
-import BlueGreen from "./pages/BlueGreen";
-import Teams from "./pages/Teams";
-import AuditLog from "./pages/AuditLog";
-import Reports from "./pages/Reports";
 
 function Router() {
   return (
@@ -53,17 +42,6 @@ function Router() {
         <Route path="/autoscaling" component={AutoScaling} />
         <Route path="/scheduled-scaling" component={ScheduledScaling} />
         <Route path="/ab-testing" component={ABTesting} />
-        <Route path="/clusters" component={Clusters} />
-        <Route path="/settings/email" component={EmailSettings} />
-        <Route path="/settings/prometheus" component={PrometheusSettings} />
-        <Route path="/gitops" component={GitOps} />
-        <Route path="/canary" component={CanaryDeployments} />
-        <Route path="/argocd" component={ArgoCD} />
-        <Route path="/chatbot" component={ChatBot} />
-        <Route path="/bluegreen" component={BlueGreen} />
-        <Route path="/teams" component={Teams} />
-        <Route path="/audit-log" component={AuditLog} />
-        <Route path="/reports" component={Reports} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

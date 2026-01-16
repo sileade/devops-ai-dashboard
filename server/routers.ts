@@ -16,17 +16,6 @@ import {
   autoscalingRouter,
   scheduledScalingRouter,
   abTestingRouter,
-  emailRouter,
-  prometheusRouter,
-  clustersRouter,
-  healthRouter,
-  canaryRouter,
-  argoCDRouter,
-  chatBotRouter,
-  blueGreenRouter,
-  teamsRouter,
-  auditLogRouter,
-  reportsRouter,
 } from "./routers/index";
 
 /**
@@ -58,17 +47,6 @@ export const appRouter = router({
   autoscaling: autoscalingRouter,
   scheduledScaling: scheduledScalingRouter,
   abTesting: abTestingRouter,
-  email: emailRouter,
-  prometheus: prometheusRouter,
-  clusters: clustersRouter,
-  health: healthRouter,
-  canary: canaryRouter,
-  argocd: argoCDRouter,
-  chatbot: chatBotRouter,
-  bluegreen: blueGreenRouter,
-  teams: teamsRouter,
-  auditLog: auditLogRouter,
-  reports: reportsRouter,
 });
 
 export type AppRouter = typeof appRouter;
