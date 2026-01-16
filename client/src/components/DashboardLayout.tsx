@@ -46,6 +46,7 @@ import {
   Mail,
   Activity,
   Rocket,
+  Bird,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -102,6 +103,7 @@ const menuItems: MenuItem[] = [
   { icon: GitBranch, label: "Topology", path: "/topology" },
   { icon: Globe, label: "Clusters", path: "/clusters" },
   { icon: Rocket, label: "GitOps", path: "/gitops" },
+  { icon: Bird, label: "Canary Deployments", path: "/canary" },
   {
     icon: Settings,
     label: "Settings",

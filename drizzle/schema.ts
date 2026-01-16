@@ -602,3 +602,239 @@ export const clusterComparisons = mysqlTable("cluster_comparisons", {
 
 export type ClusterComparison = typeof clusterComparisons.$inferSelect;
 export type InsertClusterComparison = typeof clusterComparisons.$inferInsert;
+
+
+// ============================================
+// CANARY DEPLOYMENTS
+// ============================================
+
+// Canary deployment configurations
+export const canaryDeployments = mysqlTable("canary_deployments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  applicationId: int("applicationId"),
+  clusterId: int("clusterId"),
+  
+  // Deployment identification
+  name: varchar("name", { length: 255 }).notNull(),
+  namespace: varchar("namespace", { length: 255 }).default("default"),
+  targetDeployment: varchar("targetDeployment", { length: 255 }).notNull(),
+  
+  // Version info
+  stableVersion: varchar("stableVersion", { length: 100 }),
+  canaryVersion: varchar("canaryVersion", { length: 100 }),
+  stableImage: varchar("stableImage", { length: 500 }),
+  canaryImage: varchar("canaryImage", { length: 500 }),
+  
+  // Traffic configuration
+  trafficSplitType: mysqlEnum("trafficSplitType", ["percentage", "header", "cookie"]).default("percentage").notNull(),
+  initialCanaryPercent: int("initialCanaryPercent").default(10).notNull(),
+  currentCanaryPercent: int("currentCanaryPercent").default(0).notNull(),
+  targetCanaryPercent: int("targetCanaryPercent").default(100).notNull(),
+  incrementPercent: int("incrementPercent").default(10).notNull(), // How much to increase per step
+  incrementIntervalMinutes: int("incrementIntervalMinutes").default(5).notNull(),
+  
+  // Health thresholds for auto-rollback
+  errorRateThreshold: int("errorRateThreshold").default(5).notNull(), // Percentage
+  latencyThresholdMs: int("latencyThresholdMs").default(1000).notNull(),
+  successRateThreshold: int("successRateThreshold").default(95).notNull(), // Percentage
+  minHealthyPods: int("minHealthyPods").default(1).notNull(),
+  
+  // Rollback configuration
+  autoRollbackEnabled: boolean("autoRollbackEnabled").default(true).notNull(),
+  rollbackOnErrorRate: boolean("rollbackOnErrorRate").default(true).notNull(),
+  rollbackOnLatency: boolean("rollbackOnLatency").default(true).notNull(),
+  rollbackOnPodFailure: boolean("rollbackOnPodFailure").default(true).notNull(),
+  maxRollbackAttempts: int("maxRollbackAttempts").default(3).notNull(),
+  
+  // Analysis configuration
+  analysisIntervalSeconds: int("analysisIntervalSeconds").default(30).notNull(),
+  minAnalysisDuration: int("minAnalysisDuration").default(60).notNull(), // Minimum seconds before promotion
+  requireManualApproval: boolean("requireManualApproval").default(false).notNull(),
+  
+  // Status
+  status: mysqlEnum("status", [
+    "pending",
+    "initializing",
+    "progressing",
+    "paused",
+    "promoting",
+    "promoted",
+    "rolling_back",
+    "rolled_back",
+    "failed",
+    "cancelled"
+  ]).default("pending").notNull(),
+  statusMessage: text("statusMessage"),
+  
+  // Timing
+  startedAt: timestamp("startedAt"),
+  lastProgressAt: timestamp("lastProgressAt"),
+  completedAt: timestamp("completedAt"),
+  
+  // Metadata
+  createdBy: varchar("createdBy", { length: 255 }),
+  gitCommit: varchar("gitCommit", { length: 100 }),
+  gitBranch: varchar("gitBranch", { length: 255 }),
+  pullRequestUrl: varchar("pullRequestUrl", { length: 500 }),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CanaryDeployment = typeof canaryDeployments.$inferSelect;
+export type InsertCanaryDeployment = typeof canaryDeployments.$inferInsert;
+
+// Canary deployment steps/phases
+export const canaryDeploymentSteps = mysqlTable("canary_deployment_steps", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  
+  stepNumber: int("stepNumber").notNull(),
+  targetPercent: int("targetPercent").notNull(),
+  
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "skipped"]).default("pending").notNull(),
+  
+  // Metrics at this step
+  requestCount: int("requestCount").default(0),
+  errorCount: int("errorCount").default(0),
+  avgLatencyMs: int("avgLatencyMs"),
+  p99LatencyMs: int("p99LatencyMs"),
+  successRate: int("successRate"), // Percentage * 100 for precision
+  
+  // Health status
+  healthyPods: int("healthyPods"),
+  totalPods: int("totalPods"),
+  
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CanaryDeploymentStep = typeof canaryDeploymentSteps.$inferSelect;
+export type InsertCanaryDeploymentStep = typeof canaryDeploymentSteps.$inferInsert;
+
+// Canary metrics collected during deployment
+export const canaryMetrics = mysqlTable("canary_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  stepId: int("stepId"),
+  
+  // Traffic metrics
+  canaryPercent: int("canaryPercent").notNull(),
+  canaryRequests: int("canaryRequests").default(0),
+  stableRequests: int("stableRequests").default(0),
+  
+  // Error metrics
+  canaryErrors: int("canaryErrors").default(0),
+  stableErrors: int("stableErrors").default(0),
+  canaryErrorRate: int("canaryErrorRate"), // Percentage * 100
+  stableErrorRate: int("stableErrorRate"),
+  
+  // Latency metrics (milliseconds)
+  canaryAvgLatency: int("canaryAvgLatency"),
+  stableAvgLatency: int("stableAvgLatency"),
+  canaryP50Latency: int("canaryP50Latency"),
+  stableP50Latency: int("stableP50Latency"),
+  canaryP95Latency: int("canaryP95Latency"),
+  stableP95Latency: int("stableP95Latency"),
+  canaryP99Latency: int("canaryP99Latency"),
+  stableP99Latency: int("stableP99Latency"),
+  
+  // Pod health
+  canaryHealthyPods: int("canaryHealthyPods"),
+  canaryTotalPods: int("canaryTotalPods"),
+  stableHealthyPods: int("stableHealthyPods"),
+  stableTotalPods: int("stableTotalPods"),
+  
+  // Resource usage
+  canaryCpuPercent: int("canaryCpuPercent"),
+  stableCpuPercent: int("stableCpuPercent"),
+  canaryMemoryPercent: int("canaryMemoryPercent"),
+  stableMemoryPercent: int("stableMemoryPercent"),
+  
+  // Analysis result
+  analysisResult: mysqlEnum("analysisResult", ["healthy", "degraded", "unhealthy", "inconclusive"]).default("inconclusive"),
+  analysisNotes: text("analysisNotes"),
+  
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export type CanaryMetric = typeof canaryMetrics.$inferSelect;
+export type InsertCanaryMetric = typeof canaryMetrics.$inferInsert;
+
+// Canary rollback history
+export const canaryRollbackHistory = mysqlTable("canary_rollback_history", {
+  id: int("id").autoincrement().primaryKey(),
+  deploymentId: int("deploymentId").notNull(),
+  
+  // Rollback trigger
+  trigger: mysqlEnum("trigger", [
+    "auto_error_rate",
+    "auto_latency",
+    "auto_pod_failure",
+    "auto_health_check",
+    "manual",
+    "timeout",
+    "cancelled"
+  ]).notNull(),
+  triggerValue: varchar("triggerValue", { length: 255 }), // The value that triggered rollback
+  thresholdValue: varchar("thresholdValue", { length: 255 }), // The threshold that was exceeded
+  
+  // State at rollback
+  canaryPercentAtRollback: int("canaryPercentAtRollback").notNull(),
+  stepAtRollback: int("stepAtRollback"),
+  
+  // Rollback execution
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "failed"]).default("pending").notNull(),
+  rollbackToVersion: varchar("rollbackToVersion", { length: 100 }),
+  rollbackToImage: varchar("rollbackToImage", { length: 500 }),
+  
+  // Timing
+  initiatedAt: timestamp("initiatedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  
+  // Details
+  initiatedBy: varchar("initiatedBy", { length: 255 }), // "system" or user ID
+  reason: text("reason"),
+  errorMessage: text("errorMessage"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CanaryRollbackHistory = typeof canaryRollbackHistory.$inferSelect;
+export type InsertCanaryRollbackHistory = typeof canaryRollbackHistory.$inferInsert;
+
+// Canary deployment templates for reuse
+export const canaryTemplates = mysqlTable("canary_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Default configuration
+  trafficSplitType: mysqlEnum("trafficSplitType", ["percentage", "header", "cookie"]).default("percentage").notNull(),
+  initialCanaryPercent: int("initialCanaryPercent").default(10).notNull(),
+  incrementPercent: int("incrementPercent").default(10).notNull(),
+  incrementIntervalMinutes: int("incrementIntervalMinutes").default(5).notNull(),
+  
+  // Default thresholds
+  errorRateThreshold: int("errorRateThreshold").default(5).notNull(),
+  latencyThresholdMs: int("latencyThresholdMs").default(1000).notNull(),
+  successRateThreshold: int("successRateThreshold").default(95).notNull(),
+  
+  // Default rollback settings
+  autoRollbackEnabled: boolean("autoRollbackEnabled").default(true).notNull(),
+  requireManualApproval: boolean("requireManualApproval").default(false).notNull(),
+  
+  isDefault: boolean("isDefault").default(false).notNull(),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CanaryTemplate = typeof canaryTemplates.$inferSelect;
+export type InsertCanaryTemplate = typeof canaryTemplates.$inferInsert;

@@ -25,6 +25,7 @@ import Clusters from "./pages/Clusters";
 import EmailSettings from "./pages/EmailSettings";
 import PrometheusSettings from "./pages/PrometheusSettings";
 import GitOps from "./pages/GitOps";
+import CanaryDeployments from "./pages/CanaryDeployments";
 
 function Router() {
   return (
@@ -50,6 +51,7 @@ function Router() {
         <Route path="/settings/email" component={EmailSettings} />
         <Route path="/settings/prometheus" component={PrometheusSettings} />
         <Route path="/gitops" component={GitOps} />
+        <Route path="/canary" component={CanaryDeployments} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

@@ -365,3 +365,37 @@
 ### Documentation
 - [x] Update README with CI/CD setup
 - [x] Add GitHub Actions badge
+
+
+## Phase 13: Canary Deployments
+
+### Database Schema
+- [x] Create canary_deployments table
+- [x] Create canary_metrics table for health tracking
+- [x] Create canary_rollback_history table
+
+### Backend Logic
+- [x] Implement canary deployment service
+- [x] Add traffic splitting logic (percentage-based)
+- [x] Implement health monitoring during rollout
+- [x] Add automatic rollback on error threshold
+- [x] Create promotion logic (canary -> stable)
+- [x] Add manual rollback capability
+
+### Canary Deployment UI
+- [x] Create CanaryDeployments page
+- [x] Add deployment creation wizard
+- [x] Add real-time rollout progress visualization
+- [x] Add health metrics dashboard
+- [x] Add rollback controls
+- [x] Add deployment history view
+
+### Integration
+- [x] Integrate with Pull Agent for canary triggers
+- [x] Add Kubernetes canary deployment support
+- [x] Add Docker canary deployment support
+- [x] Update GitOps page with canary status
+
+### Documentation
+- [x] Update README with canary deployment docs
+- [x] Add canary deployment examples

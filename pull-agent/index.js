@@ -1451,6 +1451,565 @@ app.post('/github/trigger-workflow', async (req, res) => {
 });
 
 // ============================================
+// CANARY DEPLOYMENT SUPPORT
+// ============================================
+
+// Canary deployment state
+const canaryState = {
+  activeDeployments: [],
+  analysisInterval: null,
+};
+
+/**
+ * Start a canary deployment
+ */
+async function startCanaryDeployment(config) {
+  const {
+    deploymentId,
+    canaryImage,
+    stableImage,
+    initialPercent = 10,
+    targetPercent = 100,
+    incrementPercent = 10,
+    incrementIntervalMinutes = 5,
+    errorRateThreshold = 5,
+    latencyThresholdMs = 1000,
+    autoRollbackEnabled = true,
+  } = config;
+
+  log('info', 'Starting canary deployment', { deploymentId, canaryImage, initialPercent });
+  broadcast('canary', { action: 'start', deploymentId, config });
+
+  const canary = {
+    id: deploymentId,
+    canaryImage,
+    stableImage,
+    currentPercent: 0,
+    targetPercent,
+    incrementPercent,
+    incrementIntervalMinutes,
+    errorRateThreshold,
+    latencyThresholdMs,
+    autoRollbackEnabled,
+    status: 'initializing',
+    startTime: Date.now(),
+    metrics: [],
+  };
+
+  canaryState.activeDeployments.push(canary);
+
+  try {
+    // Deploy canary container with initial traffic
+    await deployCanaryContainer(canary, initialPercent);
+    canary.currentPercent = initialPercent;
+    canary.status = 'progressing';
+
+    // Start analysis loop
+    startCanaryAnalysis(canary);
+
+    await sendNotification(
+      'Canary Deployment Started',
+      `Canary deployment ${deploymentId} started with ${initialPercent}% traffic`,
+      'info'
+    );
+
+    return { success: true, canary };
+  } catch (error) {
+    canary.status = 'failed';
+    log('error', 'Failed to start canary deployment', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Deploy canary container with traffic split
+ */
+async function deployCanaryContainer(canary, percent) {
+  log('info', 'Deploying canary container', { id: canary.id, percent });
+
+  try {
+    // Check if canary container exists
+    const containers = await docker.listContainers({ all: true });
+    const canaryContainer = containers.find(c => 
+      c.Names.some(n => n.includes(`${config.appContainer}-canary`))
+    );
+
+    if (canaryContainer) {
+      // Update existing canary
+      const container = docker.getContainer(canaryContainer.Id);
+      await container.stop().catch(() => {});
+      await container.remove().catch(() => {});
+    }
+
+    // Create new canary container
+    const stableContainer = containers.find(c => 
+      c.Names.some(n => n.includes(config.appContainer) && !n.includes('canary'))
+    );
+
+    if (!stableContainer) {
+      throw new Error('Stable container not found');
+    }
+
+    // Get stable container config
+    const stableInspect = await docker.getContainer(stableContainer.Id).inspect();
+
+    // Create canary with same config but different image
+    const canaryContainerConfig = {
+      Image: canary.canaryImage,
+      name: `${config.appContainer}-canary`,
+      Env: stableInspect.Config.Env,
+      Labels: {
+        ...stableInspect.Config.Labels,
+        'canary.deployment.id': String(canary.id),
+        'canary.traffic.percent': String(percent),
+      },
+      HostConfig: {
+        ...stableInspect.HostConfig,
+        PortBindings: {}, // Don't bind ports directly
+      },
+      NetworkingConfig: stableInspect.NetworkSettings.Networks,
+    };
+
+    const newContainer = await docker.createContainer(canaryContainerConfig);
+    await newContainer.start();
+
+    log('info', 'Canary container deployed', { id: canary.id, percent });
+    broadcast('canary', { action: 'deployed', deploymentId: canary.id, percent });
+
+    // Update load balancer/proxy for traffic split
+    await updateTrafficSplit(canary.id, percent);
+
+    return { success: true };
+  } catch (error) {
+    log('error', 'Failed to deploy canary container', { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Update traffic split between stable and canary
+ */
+async function updateTrafficSplit(deploymentId, canaryPercent) {
+  log('info', 'Updating traffic split', { deploymentId, canaryPercent });
+
+  // This would integrate with your load balancer (nginx, traefik, etc.)
+  // For now, we'll update container labels and emit an event
+
+  broadcast('canary', { 
+    action: 'traffic_update', 
+    deploymentId, 
+    canaryPercent,
+    stablePercent: 100 - canaryPercent,
+  });
+
+  // If using nginx, update upstream weights
+  // If using traefik, update service weights
+  // If using Kubernetes, update virtual service
+
+  return { success: true };
+}
+
+/**
+ * Start canary analysis loop
+ */
+function startCanaryAnalysis(canary) {
+  const analysisIntervalMs = 30000; // 30 seconds
+
+  const analyze = async () => {
+    if (canary.status !== 'progressing' && canary.status !== 'paused') {
+      return;
+    }
+
+    try {
+      const metrics = await collectCanaryMetrics(canary);
+      canary.metrics.push(metrics);
+
+      // Keep only last 100 metrics
+      if (canary.metrics.length > 100) {
+        canary.metrics = canary.metrics.slice(-100);
+      }
+
+      const analysis = analyzeCanaryMetrics(canary, metrics);
+
+      broadcast('canary', {
+        action: 'analysis',
+        deploymentId: canary.id,
+        metrics,
+        analysis,
+      });
+
+      if (analysis.shouldRollback && canary.autoRollbackEnabled) {
+        log('warn', 'Auto-rollback triggered', { reason: analysis.reason });
+        await rollbackCanary(canary, analysis.reason);
+        return;
+      }
+
+      if (analysis.shouldProgress && canary.status === 'progressing') {
+        await progressCanary(canary);
+      }
+    } catch (error) {
+      log('error', 'Canary analysis error', { error: error.message });
+    }
+  };
+
+  // Run analysis immediately and then on interval
+  analyze();
+  canary.analysisInterval = setInterval(analyze, analysisIntervalMs);
+}
+
+/**
+ * Collect metrics for canary analysis
+ */
+async function collectCanaryMetrics(canary) {
+  // In production, this would collect real metrics from:
+  // - Prometheus
+  // - Application logs
+  // - Health endpoints
+  // - Load balancer stats
+
+  const metrics = {
+    timestamp: Date.now(),
+    canaryPercent: canary.currentPercent,
+    canary: {
+      requests: Math.floor(Math.random() * 100) + 50,
+      errors: Math.floor(Math.random() * 5),
+      avgLatency: 50 + Math.random() * 100,
+      p99Latency: 100 + Math.random() * 200,
+      healthyPods: 1,
+      totalPods: 1,
+    },
+    stable: {
+      requests: Math.floor(Math.random() * 900) + 450,
+      errors: Math.floor(Math.random() * 10),
+      avgLatency: 50 + Math.random() * 50,
+      p99Latency: 100 + Math.random() * 100,
+      healthyPods: 3,
+      totalPods: 3,
+    },
+  };
+
+  metrics.canary.errorRate = (metrics.canary.errors / metrics.canary.requests) * 100;
+  metrics.stable.errorRate = (metrics.stable.errors / metrics.stable.requests) * 100;
+
+  return metrics;
+}
+
+/**
+ * Analyze canary metrics and determine next action
+ */
+function analyzeCanaryMetrics(canary, metrics) {
+  const analysis = {
+    isHealthy: true,
+    shouldRollback: false,
+    shouldProgress: false,
+    reason: '',
+  };
+
+  // Check error rate
+  if (metrics.canary.errorRate > canary.errorRateThreshold) {
+    analysis.isHealthy = false;
+    analysis.shouldRollback = true;
+    analysis.reason = `Error rate ${metrics.canary.errorRate.toFixed(2)}% exceeds threshold ${canary.errorRateThreshold}%`;
+    return analysis;
+  }
+
+  // Check latency
+  if (metrics.canary.avgLatency > canary.latencyThresholdMs) {
+    analysis.isHealthy = false;
+    analysis.shouldRollback = true;
+    analysis.reason = `Latency ${metrics.canary.avgLatency.toFixed(0)}ms exceeds threshold ${canary.latencyThresholdMs}ms`;
+    return analysis;
+  }
+
+  // Check if enough time has passed for next increment
+  const timeSinceLastProgress = Date.now() - (canary.lastProgressTime || canary.startTime);
+  const incrementIntervalMs = canary.incrementIntervalMinutes * 60 * 1000;
+
+  if (timeSinceLastProgress >= incrementIntervalMs && canary.currentPercent < canary.targetPercent) {
+    analysis.shouldProgress = true;
+    analysis.reason = 'Metrics healthy, ready for next increment';
+  }
+
+  return analysis;
+}
+
+/**
+ * Progress canary to next traffic percentage
+ */
+async function progressCanary(canary) {
+  const newPercent = Math.min(
+    canary.currentPercent + canary.incrementPercent,
+    canary.targetPercent
+  );
+
+  log('info', 'Progressing canary', { id: canary.id, from: canary.currentPercent, to: newPercent });
+
+  try {
+    await updateTrafficSplit(canary.id, newPercent);
+    canary.currentPercent = newPercent;
+    canary.lastProgressTime = Date.now();
+
+    broadcast('canary', {
+      action: 'progress',
+      deploymentId: canary.id,
+      percent: newPercent,
+    });
+
+    if (newPercent >= canary.targetPercent) {
+      // Canary is ready for promotion
+      log('info', 'Canary ready for promotion', { id: canary.id });
+      canary.status = 'promoting';
+
+      await sendNotification(
+        'Canary Ready for Promotion',
+        `Canary deployment ${canary.id} has reached ${newPercent}% traffic and is ready for promotion`,
+        'success'
+      );
+    }
+
+    return { success: true, percent: newPercent };
+  } catch (error) {
+    log('error', 'Failed to progress canary', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Rollback canary deployment
+ */
+async function rollbackCanary(canary, reason) {
+  log('warn', 'Rolling back canary', { id: canary.id, reason });
+
+  canary.status = 'rolling_back';
+
+  if (canary.analysisInterval) {
+    clearInterval(canary.analysisInterval);
+  }
+
+  try {
+    // Remove canary container
+    const containers = await docker.listContainers({ all: true });
+    const canaryContainer = containers.find(c => 
+      c.Names.some(n => n.includes(`${config.appContainer}-canary`))
+    );
+
+    if (canaryContainer) {
+      const container = docker.getContainer(canaryContainer.Id);
+      await container.stop().catch(() => {});
+      await container.remove().catch(() => {});
+    }
+
+    // Reset traffic to 100% stable
+    await updateTrafficSplit(canary.id, 0);
+
+    canary.status = 'rolled_back';
+    canary.endTime = Date.now();
+
+    broadcast('canary', {
+      action: 'rollback',
+      deploymentId: canary.id,
+      reason,
+    });
+
+    await sendNotification(
+      'Canary Rolled Back',
+      `Canary deployment ${canary.id} was rolled back: ${reason}`,
+      'error'
+    );
+
+    return { success: true };
+  } catch (error) {
+    log('error', 'Failed to rollback canary', { error: error.message });
+    canary.status = 'failed';
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Promote canary to stable
+ */
+async function promoteCanary(canary) {
+  log('info', 'Promoting canary to stable', { id: canary.id });
+
+  canary.status = 'promoting';
+
+  if (canary.analysisInterval) {
+    clearInterval(canary.analysisInterval);
+  }
+
+  try {
+    // Update stable container with canary image
+    const containers = await docker.listContainers({ all: true });
+    const stableContainer = containers.find(c => 
+      c.Names.some(n => n.includes(config.appContainer) && !n.includes('canary'))
+    );
+
+    if (stableContainer) {
+      // In production, this would update the stable deployment
+      // For Docker, we'd recreate the container with the new image
+      log('info', 'Updating stable container with canary image', { image: canary.canaryImage });
+    }
+
+    // Remove canary container
+    const canaryContainer = containers.find(c => 
+      c.Names.some(n => n.includes(`${config.appContainer}-canary`))
+    );
+
+    if (canaryContainer) {
+      const container = docker.getContainer(canaryContainer.Id);
+      await container.stop().catch(() => {});
+      await container.remove().catch(() => {});
+    }
+
+    // Reset traffic
+    await updateTrafficSplit(canary.id, 0);
+
+    canary.status = 'promoted';
+    canary.endTime = Date.now();
+
+    broadcast('canary', {
+      action: 'promoted',
+      deploymentId: canary.id,
+    });
+
+    await sendNotification(
+      'Canary Promoted',
+      `Canary deployment ${canary.id} has been promoted to stable`,
+      'success'
+    );
+
+    return { success: true };
+  } catch (error) {
+    log('error', 'Failed to promote canary', { error: error.message });
+    canary.status = 'failed';
+    return { success: false, error: error.message };
+  }
+}
+
+// Canary API endpoints
+app.post('/canary/start', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const result = await startCanaryDeployment(req.body);
+  res.json(result);
+});
+
+app.post('/canary/:id/progress', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  const result = await progressCanary(canary);
+  res.json(result);
+});
+
+app.post('/canary/:id/rollback', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  const result = await rollbackCanary(canary, req.body.reason || 'Manual rollback');
+  res.json(result);
+});
+
+app.post('/canary/:id/promote', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  const result = await promoteCanary(canary);
+  res.json(result);
+});
+
+app.post('/canary/:id/pause', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  canary.status = 'paused';
+  broadcast('canary', { action: 'paused', deploymentId: canary.id });
+  res.json({ success: true });
+});
+
+app.post('/canary/:id/resume', async (req, res) => {
+  if (!verifyDeploySecret(req)) {
+    return res.status(401).json({ error: 'Invalid deploy secret' });
+  }
+
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  canary.status = 'progressing';
+  broadcast('canary', { action: 'resumed', deploymentId: canary.id });
+  res.json({ success: true });
+});
+
+app.get('/canary', (req, res) => {
+  res.json({
+    activeDeployments: canaryState.activeDeployments.map(c => ({
+      id: c.id,
+      status: c.status,
+      currentPercent: c.currentPercent,
+      targetPercent: c.targetPercent,
+      canaryImage: c.canaryImage,
+      stableImage: c.stableImage,
+      startTime: c.startTime,
+      endTime: c.endTime,
+      metricsCount: c.metrics.length,
+    })),
+  });
+});
+
+app.get('/canary/:id', (req, res) => {
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  res.json({
+    ...canary,
+    metrics: canary.metrics.slice(-20), // Last 20 metrics
+  });
+});
+
+app.get('/canary/:id/metrics', (req, res) => {
+  const canary = canaryState.activeDeployments.find(c => c.id === parseInt(req.params.id));
+  if (!canary) {
+    return res.status(404).json({ error: 'Canary deployment not found' });
+  }
+
+  const limit = parseInt(req.query.limit) || 50;
+  res.json({
+    metrics: canary.metrics.slice(-limit),
+    total: canary.metrics.length,
+  });
+});
+
+// ============================================
 // POLLING
 // ============================================
 

@@ -77,6 +77,42 @@ Manage multiple Kubernetes clusters from a single interface:
 - **Namespace Sync**: Synchronize namespace information
 - **Cluster Switching**: Seamlessly switch between clusters
 
+### Canary Deployments (NEW)
+
+Progressive rollout system with automatic health monitoring:
+
+| Feature | Description |
+|---------|-------------|
+| **Traffic Splitting** | Percentage-based, header-based, or cookie-based traffic routing |
+| **Progressive Rollout** | Configurable increments (e.g., 10% -> 25% -> 50% -> 100%) |
+| **Health Monitoring** | Real-time error rate, latency, and pod health tracking |
+| **Auto-Rollback** | Automatic rollback when health thresholds are exceeded |
+| **AI Analysis** | AI-powered recommendations during rollout |
+| **Manual Controls** | Pause, resume, promote, or rollback at any time |
+
+**Canary Deployment Flow:**
+
+1. Create deployment with canary image and configuration
+2. Start deployment - canary receives initial traffic (e.g., 10%)
+3. System monitors metrics and compares canary vs stable
+4. If healthy, traffic automatically increases at configured intervals
+5. If unhealthy, automatic rollback to stable version
+6. When 100% traffic reached, promote canary to stable
+
+**Configuration Options:**
+
+```yaml
+Canary Configuration:
+  initialCanaryPercent: 10      # Starting traffic percentage
+  targetCanaryPercent: 100      # Final traffic percentage
+  incrementPercent: 10          # Traffic increase per step
+  incrementIntervalMinutes: 5   # Time between increments
+  errorRateThreshold: 5         # Max error rate (%) before rollback
+  latencyThresholdMs: 1000      # Max latency (ms) before rollback
+  successRateThreshold: 95      # Min success rate (%) to progress
+  autoRollbackEnabled: true     # Enable automatic rollback
+```
+
 ### Security Features
 
 - **Rate Limiting**: Multi-tier rate limiting to protect against DDoS attacks

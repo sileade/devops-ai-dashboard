@@ -43,6 +43,13 @@
       "when": 1768542544234,
       "tag": "0005_ambiguous_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1768546332724,
+      "tag": "0006_light_warbound",
+      "breakpoints": true
     }
   ]
 }
