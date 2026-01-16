@@ -42,6 +42,9 @@ import {
   Scale,
   Calendar,
   FlaskConical,
+  Globe,
+  Mail,
+  Activity,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -96,6 +99,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   { icon: GitBranch, label: "Topology", path: "/topology" },
+  { icon: Globe, label: "Clusters", path: "/clusters" },
   {
     icon: Settings,
     label: "Settings",
@@ -103,6 +107,8 @@ const menuItems: MenuItem[] = [
     children: [
       { icon: Settings, label: "General", path: "/settings" },
       { icon: Bell, label: "Alert Thresholds", path: "/settings/alerts" },
+      { icon: Mail, label: "Email", path: "/settings/email" },
+      { icon: Activity, label: "Prometheus", path: "/settings/prometheus" },
     ],
   },
 ];

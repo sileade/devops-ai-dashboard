@@ -417,3 +417,188 @@ export const abTestMetrics = mysqlTable("ab_test_metrics", {
 
 export type AbTestMetric = typeof abTestMetrics.$inferSelect;
 export type InsertAbTestMetric = typeof abTestMetrics.$inferInsert;
+
+
+// Email configuration and subscriptions
+export const emailConfig = mysqlTable("email_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  smtpHost: varchar("smtpHost", { length: 255 }).notNull(),
+  smtpPort: int("smtpPort").default(587).notNull(),
+  smtpSecure: boolean("smtpSecure").default(false).notNull(),
+  smtpUser: varchar("smtpUser", { length: 255 }).notNull(),
+  smtpPassword: varchar("smtpPassword", { length: 500 }).notNull(), // encrypted
+  fromEmail: varchar("fromEmail", { length: 320 }).notNull(),
+  fromName: varchar("fromName", { length: 255 }).default("DevOps AI Dashboard"),
+  isVerified: boolean("isVerified").default(false).notNull(),
+  lastTestedAt: timestamp("lastTestedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmailConfig = typeof emailConfig.$inferSelect;
+export type InsertEmailConfig = typeof emailConfig.$inferInsert;
+
+// Email subscriptions for notifications
+export const emailSubscriptions = mysqlTable("email_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  name: varchar("name", { length: 255 }),
+  // Notification types
+  criticalAlerts: boolean("criticalAlerts").default(true).notNull(),
+  warningAlerts: boolean("warningAlerts").default(true).notNull(),
+  infoAlerts: boolean("infoAlerts").default(false).notNull(),
+  scalingEvents: boolean("scalingEvents").default(true).notNull(),
+  abTestResults: boolean("abTestResults").default(true).notNull(),
+  dailyDigest: boolean("dailyDigest").default(false).notNull(),
+  weeklyReport: boolean("weeklyReport").default(true).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  unsubscribeToken: varchar("unsubscribeToken", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmailSubscription = typeof emailSubscriptions.$inferSelect;
+export type InsertEmailSubscription = typeof emailSubscriptions.$inferInsert;
+
+// Email sending history
+export const emailHistory = mysqlTable("email_history", {
+  id: int("id").autoincrement().primaryKey(),
+  subscriptionId: int("subscriptionId"),
+  toEmail: varchar("toEmail", { length: 320 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  templateType: mysqlEnum("templateType", ["alert", "scaling", "ab_test", "digest", "report", "custom"]).notNull(),
+  status: mysqlEnum("status", ["pending", "sent", "failed", "bounced"]).default("pending").notNull(),
+  messageId: varchar("messageId", { length: 255 }),
+  errorMessage: text("errorMessage"),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EmailHistory = typeof emailHistory.$inferSelect;
+export type InsertEmailHistory = typeof emailHistory.$inferInsert;
+
+// Prometheus/Grafana integration configuration
+export const prometheusConfig = mysqlTable("prometheus_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  applicationId: int("applicationId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  prometheusUrl: varchar("prometheusUrl", { length: 500 }).notNull(),
+  prometheusUsername: varchar("prometheusUsername", { length: 255 }),
+  prometheusPassword: varchar("prometheusPassword", { length: 500 }),
+  grafanaUrl: varchar("grafanaUrl", { length: 500 }),
+  grafanaApiKey: varchar("grafanaApiKey", { length: 500 }),
+  scrapeInterval: int("scrapeInterval").default(15).notNull(), // seconds
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastScrapeAt: timestamp("lastScrapeAt"),
+  lastScrapeStatus: mysqlEnum("lastScrapeStatus", ["success", "failed", "timeout"]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PrometheusConfig = typeof prometheusConfig.$inferSelect;
+export type InsertPrometheusConfig = typeof prometheusConfig.$inferInsert;
+
+// Custom Prometheus metrics definitions
+export const prometheusMetrics = mysqlTable("prometheus_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  configId: int("configId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  query: text("query").notNull(), // PromQL query
+  description: text("description"),
+  unit: varchar("unit", { length: 50 }),
+  aggregation: mysqlEnum("aggregation", ["avg", "sum", "min", "max", "count", "rate"]).default("avg").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PrometheusMetric = typeof prometheusMetrics.$inferSelect;
+export type InsertPrometheusMetric = typeof prometheusMetrics.$inferInsert;
+
+// Grafana dashboard configurations
+export const grafanaDashboards = mysqlTable("grafana_dashboards", {
+  id: int("id").autoincrement().primaryKey(),
+  configId: int("configId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  uid: varchar("uid", { length: 100 }).notNull(),
+  embedUrl: text("embedUrl"),
+  category: mysqlEnum("category", ["overview", "containers", "kubernetes", "custom"]).default("custom").notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GrafanaDashboard = typeof grafanaDashboards.$inferSelect;
+export type InsertGrafanaDashboard = typeof grafanaDashboards.$inferInsert;
+
+// Kubernetes clusters for multi-cluster management
+export const kubernetesClusters = mysqlTable("kubernetes_clusters", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  displayName: varchar("displayName", { length: 255 }),
+  description: text("description"),
+  // Connection details
+  apiServerUrl: varchar("apiServerUrl", { length: 500 }).notNull(),
+  authType: mysqlEnum("authType", ["kubeconfig", "token", "certificate", "oidc"]).default("token").notNull(),
+  kubeconfig: text("kubeconfig"), // encrypted
+  bearerToken: text("bearerToken"), // encrypted
+  clientCertificate: text("clientCertificate"),
+  clientKey: text("clientKey"), // encrypted
+  caCertificate: text("caCertificate"),
+  // Cluster metadata
+  kubernetesVersion: varchar("kubernetesVersion", { length: 50 }),
+  provider: mysqlEnum("provider", ["aws", "gcp", "azure", "digitalocean", "linode", "on-premise", "other"]).default("other"),
+  region: varchar("region", { length: 100 }),
+  // Status
+  status: mysqlEnum("status", ["connected", "disconnected", "error", "pending"]).default("pending").notNull(),
+  lastHealthCheck: timestamp("lastHealthCheck"),
+  healthStatus: mysqlEnum("healthStatus", ["healthy", "degraded", "unhealthy", "unknown"]).default("unknown"),
+  nodeCount: int("nodeCount"),
+  podCount: int("podCount"),
+  // Settings
+  isDefault: boolean("isDefault").default(false).notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  syncInterval: int("syncInterval").default(30).notNull(), // seconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KubernetesCluster = typeof kubernetesClusters.$inferSelect;
+export type InsertKubernetesCluster = typeof kubernetesClusters.$inferInsert;
+
+// Cluster namespaces cache
+export const clusterNamespaces = mysqlTable("cluster_namespaces", {
+  id: int("id").autoincrement().primaryKey(),
+  clusterId: int("clusterId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }),
+  labels: json("labels"),
+  podCount: int("podCount").default(0),
+  deploymentCount: int("deploymentCount").default(0),
+  serviceCount: int("serviceCount").default(0),
+  lastSyncAt: timestamp("lastSyncAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ClusterNamespace = typeof clusterNamespaces.$inferSelect;
+export type InsertClusterNamespace = typeof clusterNamespaces.$inferInsert;
+
+// Cross-cluster resource comparison snapshots
+export const clusterComparisons = mysqlTable("cluster_comparisons", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  clusterIds: json("clusterIds").notNull(), // array of cluster IDs
+  comparisonType: mysqlEnum("comparisonType", ["resources", "workloads", "networking", "storage", "all"]).default("all").notNull(),
+  snapshotData: json("snapshotData"), // comparison results
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ClusterComparison = typeof clusterComparisons.$inferSelect;
+export type InsertClusterComparison = typeof clusterComparisons.$inferInsert;

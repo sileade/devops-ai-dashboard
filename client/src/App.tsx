@@ -21,6 +21,9 @@ import AlertSettings from "./pages/AlertSettings";
 import AutoScaling from "./pages/AutoScaling";
 import ScheduledScaling from "./pages/ScheduledScaling";
 import ABTesting from "./pages/ABTesting";
+import Clusters from "./pages/Clusters";
+import EmailSettings from "./pages/EmailSettings";
+import PrometheusSettings from "./pages/PrometheusSettings";
 
 function Router() {
   return (
@@ -42,6 +45,9 @@ function Router() {
         <Route path="/autoscaling" component={AutoScaling} />
         <Route path="/scheduled-scaling" component={ScheduledScaling} />
         <Route path="/ab-testing" component={ABTesting} />
+        <Route path="/clusters" component={Clusters} />
+        <Route path="/settings/email" component={EmailSettings} />
+        <Route path="/settings/prometheus" component={PrometheusSettings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

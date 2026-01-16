@@ -14,3 +14,6 @@ export { metricsRouter, alertThresholdsRouter, alertHistoryRouter } from "./metr
 export { autoscalingRouter } from "./autoscaling";
 export { scheduledScalingRouter } from "./scheduledScaling";
 export { abTestingRouter } from "./abTesting";
+export { emailRouter } from "./email";
+export { prometheusRouter } from "./prometheus";
+export { clustersRouter } from "./clusters";

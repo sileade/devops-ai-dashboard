@@ -16,6 +16,9 @@ import {
   autoscalingRouter,
   scheduledScalingRouter,
   abTestingRouter,
+  emailRouter,
+  prometheusRouter,
+  clustersRouter,
 } from "./routers/index";
 
 /**
@@ -47,6 +50,9 @@ export const appRouter = router({
   autoscaling: autoscalingRouter,
   scheduledScaling: scheduledScalingRouter,
   abTesting: abTestingRouter,
+  email: emailRouter,
+  prometheus: prometheusRouter,
+  clusters: clustersRouter,
 });
 
 export type AppRouter = typeof appRouter;
