@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/sileade/devops-ai-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/sileade/devops-ai-dashboard/actions/workflows/ci.yml)
 [![CD](https://github.com/sileade/devops-ai-dashboard/actions/workflows/cd.yml/badge.svg)](https://github.com/sileade/devops-ai-dashboard/actions/workflows/cd.yml)
+[![E2E Tests](https://github.com/sileade/devops-ai-dashboard/actions/workflows/e2e.yml/badge.svg)](https://github.com/sileade/devops-ai-dashboard/actions/workflows/e2e.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
@@ -14,9 +15,12 @@ A comprehensive DevOps management platform with AI-powered automation, real-time
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Docker Deployment](#docker-deployment)
+- [Staging Environment](#staging-environment)
+- [CI/CD Pipeline](#cicd-pipeline)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
 - [Testing](#testing)
+- [E2E Testing](#e2e-testing)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -352,9 +356,91 @@ const report = await trpc.reports.generateTeamReport.mutate({
 });
 ```
 
+## Staging Environment
+
+The project includes a complete staging environment configuration for pre-production testing.
+
+### Quick Start Staging
+
+```bash
+# Deploy to staging
+./scripts/deploy-staging.sh
+
+# With database migrations
+./scripts/deploy-staging.sh --migrate
+
+# With monitoring stack
+./scripts/deploy-staging.sh --monitoring
+
+# Full deployment with all options
+./scripts/deploy-staging.sh --build --migrate --monitoring --logs
+```
+
+### Staging Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **app** | 3000 | Main application |
+| **db** | 5432 | PostgreSQL database |
+| **redis** | 6379 | Cache and sessions |
+| **nginx** | 80/443 | Reverse proxy (optional) |
+| **prometheus** | 9090 | Metrics (optional) |
+| **grafana** | 3001 | Visualization (optional) |
+
+### Environment Configuration
+
+Copy and configure the staging environment file:
+
+```bash
+cp .env.example .env.staging
+# Edit .env.staging with staging-specific values
+```
+
+## CI/CD Pipeline
+
+The project includes a comprehensive CI/CD pipeline with GitHub Actions.
+
+### Workflows
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **CI** | Push, PR | Lint, test, type-check, security scan |
+| **CD** | Push to main | Build, deploy to staging/production |
+| **E2E** | Push, PR | Playwright end-to-end tests |
+| **Release** | Tag push | Create GitHub release with changelog |
+
+### Required GitHub Secrets
+
+For deployment to work, configure these secrets in your repository:
+
+| Secret | Description |
+|--------|-------------|
+| `STAGING_HOST` | Staging server hostname/IP |
+| `STAGING_USER` | SSH user for staging |
+| `STAGING_SSH_KEY` | SSH private key for staging |
+| `PRODUCTION_HOST` | Production server hostname/IP |
+| `PRODUCTION_USER` | SSH user for production |
+| `PRODUCTION_SSH_KEY` | SSH private key for production |
+| `SLACK_WEBHOOK_URL` | Slack notifications (optional) |
+| `DISCORD_WEBHOOK_URL` | Discord notifications (optional) |
+
+See [docs/GITHUB-SECRETS-SETUP.md](docs/GITHUB-SECRETS-SETUP.md) for detailed setup instructions.
+
+### Deployment Flow
+
+```
+Push to main → CI Tests → Build Docker Image → Deploy to Staging
+                                                      ↓
+                                              E2E Tests on Staging
+                                                      ↓
+                                              Deploy to Production
+                                                      ↓
+                                              Health Check & Notify
+```
+
 ## Testing
 
-### Run Tests
+### Run Unit Tests
 
 ```bash
 # Run all tests
@@ -377,6 +463,49 @@ pnpm test server/auth.logout.test.ts
 | Dashboard | 5 | ✅ Pass |
 | Infrastructure | 26 | ✅ Pass |
 | **Total** | **64** | **All Pass** |
+
+## E2E Testing
+
+The project uses Playwright for end-to-end testing of critical user flows.
+
+### Run E2E Tests
+
+```bash
+# Run all E2E tests
+pnpm test:e2e
+
+# Run with UI mode (interactive)
+pnpm test:e2e:ui
+
+# Run specific test file
+npx playwright test e2e/dashboard.spec.ts
+
+# Run against staging environment
+E2E_BASE_URL=https://staging.example.com pnpm test:e2e
+
+# View test report
+pnpm test:e2e:report
+```
+
+### E2E Test Suites
+
+| Suite | Tests | Description |
+|-------|-------|-------------|
+| Dashboard | 8 | Main dashboard functionality |
+| Containers | 8 | Docker/Podman container management |
+| Kubernetes | 10 | K8s cluster operations |
+| AI Assistant | 10 | AI chat and recommendations |
+| **Total** | **36** | Critical user flows |
+
+### Test Configuration
+
+Playwright is configured in `playwright.config.ts` with:
+
+- Chromium browser testing
+- Automatic dev server startup
+- Screenshot on failure
+- Video recording on retry
+- HTML and JSON reports
 
 ## Code Statistics
 

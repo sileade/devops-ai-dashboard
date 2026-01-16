@@ -572,3 +572,34 @@
 - [x] Add deployment workflow diagram
 - [x] Document environment variables
 - [x] Add troubleshooting guide
+
+
+## Phase 20: GitHub Secrets, E2E Tests & Staging Environment
+
+### GitHub Secrets Documentation
+- [x] Create GitHub Secrets setup guide
+- [x] Document required secrets (STAGING_HOST, PRODUCTION_HOST, SSH keys)
+- [x] Add secrets validation script
+- [x] Create example .env files for different environments
+
+### E2E Tests with Playwright
+- [x] Install Playwright and dependencies
+- [x] Configure Playwright for the project
+- [x] Create E2E test for dashboard page
+- [x] Create E2E test for containers management
+- [x] Create E2E test for Kubernetes operations
+- [x] Create E2E test for AI Assistant
+- [x] Add E2E tests to CI pipeline
+- [x] Create test report generation
+
+### Staging Environment
+- [x] Create docker-compose.staging.yml
+- [x] Create staging environment configuration
+- [x] Add staging-specific environment variables
+- [x] Create staging deployment script
+- [x] Add staging health checks
+
+### Documentation & Repository
+- [x] Update README with new features
+- [x] Update CHANGELOG
+- [x] Commit and push to GitHub
