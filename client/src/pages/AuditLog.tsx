@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   FileText,
   Search,
@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 
 export default function AuditLog() {
-  const { toast } = useToast();
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("");
@@ -83,10 +83,10 @@ export default function AuditLog() {
       a.download = `audit-logs-${new Date().toISOString()}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: "Logs exported successfully" });
+      toast.success("Logs exported successfully");
     },
     onError: (error) => {
-      toast({ title: "Failed to export logs", description: error.message, variant: "destructive" });
+      toast.error("Failed to export logs", { description: error.message });
     },
   });
 
@@ -511,7 +511,7 @@ export default function AuditLog() {
                   <div className="space-y-4">
                     <div className="prose prose-sm dark:prose-invert max-w-none">
                       <pre className="whitespace-pre-wrap bg-muted p-4 rounded-lg text-sm">
-                        {anomalies.analysis}
+                        {typeof anomalies.analysis === 'string' ? anomalies.analysis : JSON.stringify(anomalies.analysis, null, 2)}
                       </pre>
                     </div>
                     <p className="text-xs text-muted-foreground">

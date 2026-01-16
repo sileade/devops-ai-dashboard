@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   Users,
   Plus,
@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 
 export default function Teams() {
-  const { toast } = useToast();
+
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
@@ -97,48 +97,48 @@ export default function Teams() {
   // Mutations
   const createTeam = trpc.teams.create.useMutation({
     onSuccess: () => {
-      toast({ title: "Team created successfully" });
+      toast.success("Team created successfully");
       setShowCreateDialog(false);
       setNewTeam({ name: "", description: "", primaryColor: "#3B82F6" });
       refetchTeams();
     },
     onError: (error) => {
-      toast({ title: "Failed to create team", description: error.message, variant: "destructive" });
+      toast.error("Failed to create team", { description: error.message });
     },
   });
 
   const inviteMember = trpc.teams.createInvitation.useMutation({
     onSuccess: (data) => {
-      toast({ title: "Invitation sent", description: `Invitation token: ${(data as any).token?.slice(0, 8)}...` });
+      toast.success("Invitation sent", { description: `Invitation token: ${(data as any).token?.slice(0, 8)}...` });
       setShowInviteDialog(false);
       setInviteEmail("");
     },
     onError: (error) => {
-      toast({ title: "Failed to send invitation", description: error.message, variant: "destructive" });
+      toast.error("Failed to send invitation", { description: error.message });
     },
   });
 
   const updateMemberRole = trpc.teams.updateMemberRole.useMutation({
     onSuccess: () => {
-      toast({ title: "Role updated successfully" });
+      toast.success("Role updated successfully");
     },
     onError: (error) => {
-      toast({ title: "Failed to update role", description: error.message, variant: "destructive" });
+      toast.error("Failed to update role", { description: error.message });
     },
   });
 
   const removeMember = trpc.teams.removeMember.useMutation({
     onSuccess: () => {
-      toast({ title: "Member removed successfully" });
+      toast.success("Member removed successfully");
     },
     onError: (error) => {
-      toast({ title: "Failed to remove member", description: error.message, variant: "destructive" });
+      toast.error("Failed to remove member", { description: error.message });
     },
   });
 
   const cancelInvitation = trpc.teams.cancelInvitation.useMutation({
     onSuccess: () => {
-      toast({ title: "Invitation cancelled" });
+      toast.success("Invitation cancelled");
     },
   });
 
@@ -645,7 +645,7 @@ export default function Teams() {
                         ) : insights ? (
                           <div className="prose prose-sm dark:prose-invert max-w-none">
                             <pre className="whitespace-pre-wrap bg-muted p-4 rounded-lg text-sm">
-                              {insights.analysis}
+                              {typeof insights.analysis === 'string' ? insights.analysis : JSON.stringify(insights.analysis, null, 2)}
                             </pre>
                             <p className="text-xs text-muted-foreground mt-4">
                               Generated at: {new Date(insights.generatedAt).toLocaleString()}
