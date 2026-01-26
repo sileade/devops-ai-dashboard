@@ -35,9 +35,11 @@ import {
   Network,
   Server,
   Lock,
+  Plus,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import TerraformBuilder from "@/components/TerraformBuilder";
 
 interface Workspace {
   id: string;
@@ -120,6 +122,7 @@ export default function Terraform() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(
     mockWorkspaces[0]
   );
+  const [showBuilder, setShowBuilder] = useState(false);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -158,6 +161,10 @@ export default function Terraform() {
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
             Refresh
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowBuilder(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Config
           </Button>
         </div>
       </div>
@@ -419,6 +426,20 @@ export default function Terraform() {
           )}
         </div>
       </div>
+
+      {/* Terraform Builder Dialog */}
+      <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
+        <DialogContent className="max-w-5xl h-[90vh] p-0">
+          <TerraformBuilder
+            onComplete={(hcl) => {
+              console.log("Generated HCL:", hcl);
+              toast.success("Terraform configuration created! Copy the HCL to use it.");
+              setShowBuilder(false);
+            }}
+            onCancel={() => setShowBuilder(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

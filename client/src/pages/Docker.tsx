@@ -39,12 +39,14 @@ import {
   Box,
   Wifi,
   WifiOff,
+  Plus,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { StopContainerDialog, RestartContainerDialog, DeleteContainerDialog } from "@/components/ConfirmDialog";
+import ContainerWizard from "@/components/ContainerWizard";
 
 const statusColors: Record<string, string> = {
   running: "bg-green-500/10 text-green-500 border-green-500/30",
@@ -64,6 +66,7 @@ export default function Docker() {
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket({
@@ -172,6 +175,10 @@ export default function Docker() {
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${containersQuery.isFetching ? "animate-spin" : ""}`} />
             Refresh
+          </Button>
+          <Button size="sm" onClick={() => setShowWizard(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Container
           </Button>
         </div>
       </div>
@@ -613,6 +620,21 @@ export default function Docker() {
           setShowDeleteDialog(false);
         }}
       />
+
+      {/* Container Wizard Dialog */}
+      <Dialog open={showWizard} onOpenChange={setShowWizard}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0">
+          <ContainerWizard
+            onComplete={(config, command) => {
+              console.log("Container config:", config);
+              console.log("Docker command:", command);
+              toast.success("Container configuration created! Copy the command to run it.");
+              setShowWizard(false);
+            }}
+            onCancel={() => setShowWizard(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

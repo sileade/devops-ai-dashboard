@@ -39,9 +39,15 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Plus,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import DeploymentWizard from "@/components/DeploymentWizard";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 
 interface K8sPod {
   name: string;
@@ -115,6 +121,7 @@ export default function Kubernetes() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedNamespace, setSelectedNamespace] = useState("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   const filteredPods = mockPods.filter(
     (pod) =>
@@ -159,6 +166,10 @@ export default function Kubernetes() {
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
             Refresh
+          </Button>
+          <Button size="sm" onClick={() => setShowWizard(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Deployment
           </Button>
         </div>
       </div>
@@ -434,6 +445,21 @@ export default function Kubernetes() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Deployment Wizard Dialog */}
+      <Dialog open={showWizard} onOpenChange={setShowWizard}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0">
+          <DeploymentWizard
+            onComplete={(config, yaml) => {
+              console.log("Deployment config:", config);
+              console.log("YAML:", yaml);
+              toast.success("Deployment configuration created! Copy the YAML to apply it.");
+              setShowWizard(false);
+            }}
+            onCancel={() => setShowWizard(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
