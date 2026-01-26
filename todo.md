@@ -431,3 +431,31 @@
 - [ ] Implement dark/light theme toggle
 - [ ] Add mobile-responsive improvements
 
+
+
+## Phase 27: Docker Compose Editor, Breadcrumbs & Layout Integration
+
+### Docker Compose Visual Editor
+- [x] Create DockerComposeEditor component
+- [x] Add service definition with visual form
+- [x] Add network configuration
+- [x] Add volume configuration
+- [x] Add environment variables management
+- [x] Add depends_on relationship visualization
+- [x] Add YAML preview and export
+- [ ] Integrate with Docker page
+
+### Breadcrumb Navigation
+- [x] Create Breadcrumb component
+- [x] Add route-based breadcrumb generation
+- [x] Add custom breadcrumb labels
+- [x] Integrate with DashboardLayout
+- [x] Add mobile-responsive design
+
+### DashboardLayout Integration
+- [x] Add Onboarding component to DashboardLayout
+- [x] Add QuickActions to header
+- [x] Add Breadcrumb to header
+- [x] Add keyboard shortcut listener (Cmd+K)
+- [x] Add mobile search button
+

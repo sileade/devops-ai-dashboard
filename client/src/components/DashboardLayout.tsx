@@ -47,6 +47,10 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
+import { Onboarding } from "./Onboarding";
+import { QuickActions } from "./QuickActions";
+import { Breadcrumb } from "./Breadcrumb";
+import { Search } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -173,6 +177,22 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [openMenus, setOpenMenus] = useState<string[]>([]);
   const isMobile = useIsMobile();
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('onboarding-completed');
+  });
+  const [showQuickActions, setShowQuickActions] = useState(false);
+
+  // Keyboard shortcut for QuickActions (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowQuickActions(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const activeMenuItem = menuItems.find(
     (item) =>
@@ -369,6 +389,29 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
+        {/* Desktop Header with QuickActions */}
+        {!isMobile && (
+          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+            <div className="flex items-center gap-4">
+              <Breadcrumb />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-2 text-muted-foreground"
+                onClick={() => setShowQuickActions(true)}
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Quick Actions</span>
+                <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </Button>
+            </div>
+          </div>
+        )}
+        {/* Mobile Header */}
         {isMobile && (
           <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
@@ -381,9 +424,32 @@ function DashboardLayoutContent({
                 </div>
               </div>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => setShowQuickActions(true)}
+            >
+              <Search className="h-4 w-4" />
+            </Button>
           </div>
         )}
         <main className="flex-1 p-4 md:p-6">{children}</main>
+
+        {/* Onboarding Tour */}
+        <Onboarding
+          isOpen={showOnboarding}
+          onClose={() => {
+            setShowOnboarding(false);
+            localStorage.setItem('onboarding-completed', 'true');
+          }}
+        />
+
+        {/* Quick Actions Command Palette */}
+        <QuickActions
+          isOpen={showQuickActions}
+          onClose={() => setShowQuickActions(false)}
+        />
       </SidebarInset>
     </>
   );

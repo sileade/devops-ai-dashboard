@@ -104,21 +104,29 @@ const onboardingSteps: OnboardingStep[] = [
   },
 ];
 
-interface OnboardingProps {
+export interface OnboardingProps {
+  isOpen?: boolean;
+  onClose?: () => void;
   onComplete?: () => void;
 }
 
-export function Onboarding({ onComplete }: OnboardingProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function Onboarding({ isOpen: externalIsOpen, onClose, onComplete }: OnboardingProps) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
 
+  // Use external control if provided, otherwise internal
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
+  const setIsOpen = onClose ? (open: boolean) => !open && onClose() : setInternalIsOpen;
+
   useEffect(() => {
-    // Check if user has completed onboarding
-    const hasCompletedOnboarding = localStorage.getItem("devops-onboarding-completed");
-    if (!hasCompletedOnboarding) {
-      setIsOpen(true);
+    // Only auto-open if not externally controlled
+    if (externalIsOpen === undefined) {
+      const hasCompletedOnboarding = localStorage.getItem("devops-onboarding-completed");
+      if (!hasCompletedOnboarding) {
+        setInternalIsOpen(true);
+      }
     }
-  }, []);
+  }, [externalIsOpen]);
 
   const handleNext = () => {
     if (currentStep < onboardingSteps.length - 1) {

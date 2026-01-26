@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   CommandDialog,
@@ -40,7 +40,9 @@ interface QuickAction {
   action: () => void;
 }
 
-interface QuickActionsProps {
+export interface QuickActionsProps {
+  isOpen?: boolean;
+  onClose?: () => void;
   onOpenContainerWizard?: () => void;
   onOpenDeploymentWizard?: () => void;
   onOpenPlaybookEditor?: () => void;
@@ -48,26 +50,40 @@ interface QuickActionsProps {
 }
 
 export function QuickActions({
+  isOpen: externalIsOpen,
+  onClose,
   onOpenContainerWizard,
   onOpenDeploymentWizard,
   onOpenPlaybookEditor,
   onOpenTerraformBuilder,
 }: QuickActionsProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  
+  // Use external control if provided
+  const open = externalIsOpen !== undefined ? externalIsOpen : internalOpen;
+  const setOpen = (value: boolean) => {
+    if (externalIsOpen !== undefined) {
+      if (!value && onClose) onClose();
+    } else {
+      setInternalOpen(value);
+    }
+  };
   const [, setLocation] = useLocation();
 
-  // Listen for keyboard shortcut
-  useState(() => {
+  // Listen for keyboard shortcut (only when not externally controlled)
+  useEffect(() => {
+    if (externalIsOpen !== undefined) return; // Skip if externally controlled
+    
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setOpen((open) => !open);
+        setInternalOpen(prev => !prev);
       }
     };
 
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
-  });
+  }, [externalIsOpen]);
 
   const quickActions: QuickAction[] = [
     // Create Actions
