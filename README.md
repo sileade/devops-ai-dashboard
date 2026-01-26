@@ -1,6 +1,54 @@
 # DevOps AI Dashboard
 
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="DevOps AI Dashboard" width="800">
+</p>
+
 A comprehensive DevOps management platform with AI-powered automation, real-time monitoring, and intelligent scaling capabilities. Built with React, TypeScript, tRPC, and integrated with Docker, Kubernetes, Ansible, and Terraform.
+
+## Screenshots
+
+### Infrastructure Overview
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Dashboard" width="700">
+</p>
+
+*Real-time infrastructure monitoring with metrics, alerts, and quick actions*
+
+### Docker Management
+<p align="center">
+  <img src="docs/images/docker.png" alt="Docker Management" width="700">
+</p>
+
+*Full container lifecycle management with images, networks, and volumes*
+
+### Kubernetes Cluster
+<p align="center">
+  <img src="docs/images/kubernetes.png" alt="Kubernetes" width="700">
+</p>
+
+*Pod, Deployment, and Service management with namespace filtering*
+
+### AI Assistant
+<p align="center">
+  <img src="docs/images/ai-assistant.png" alt="AI Assistant" width="700">
+</p>
+
+*Intelligent DevOps assistant with troubleshooting and command recommendations*
+
+### Ansible Automation
+<p align="center">
+  <img src="docs/images/ansible.png" alt="Ansible" width="700">
+</p>
+
+*Visual playbook editor with drag-and-drop task management*
+
+### Terraform IaC
+<p align="center">
+  <img src="docs/images/terraform.png" alt="Terraform" width="700">
+</p>
+
+*Infrastructure as Code management with visual resource builder*
 
 ## Features
 
