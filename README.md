@@ -1,7 +1,7 @@
 # DevOps AI Dashboard
 
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="DevOps AI Dashboard" width="800">
+  <img src="docs/screenshots/dashboard.png" alt="DevOps AI Dashboard" width="800">
 </p>
 
 A comprehensive DevOps management platform with AI-powered automation, real-time monitoring, and intelligent scaling capabilities. Built with React, TypeScript, tRPC, and integrated with Docker, Kubernetes, Ansible, and Terraform.
@@ -10,45 +10,80 @@ A comprehensive DevOps management platform with AI-powered automation, real-time
 
 ### Infrastructure Overview
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="Dashboard" width="700">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="700">
 </p>
 
 *Real-time infrastructure monitoring with metrics, alerts, and quick actions*
 
 ### Docker Management
 <p align="center">
-  <img src="docs/images/docker.png" alt="Docker Management" width="700">
+  <img src="docs/screenshots/docker-containers.png" alt="Docker Management" width="700">
 </p>
 
 *Full container lifecycle management with images, networks, and volumes*
 
+### Container Wizard
+<p align="center">
+  <img src="docs/screenshots/container-wizard.png" alt="Container Wizard" width="700">
+</p>
+
+*Step-by-step wizard for creating Docker containers with popular image templates*
+
+### Docker Compose Editor
+<p align="center">
+  <img src="docs/screenshots/docker-compose-editor.png" alt="Docker Compose Editor" width="700">
+</p>
+
+*Visual editor for building multi-container Docker Compose applications with services, networks, and volumes*
+
 ### Kubernetes Cluster
 <p align="center">
-  <img src="docs/images/kubernetes.png" alt="Kubernetes" width="700">
+  <img src="docs/screenshots/kubernetes.png" alt="Kubernetes" width="700">
 </p>
 
 *Pod, Deployment, and Service management with namespace filtering*
 
+### Deployment Wizard
+<p align="center">
+  <img src="docs/screenshots/deployment-wizard.png" alt="Deployment Wizard" width="700">
+</p>
+
+*Visual wizard for creating Kubernetes deployments with resource configuration*
+
 ### AI Assistant
 <p align="center">
-  <img src="docs/images/ai-assistant.png" alt="AI Assistant" width="700">
+  <img src="docs/screenshots/ai-assistant.png" alt="AI Assistant" width="700">
 </p>
 
 *Intelligent DevOps assistant with troubleshooting and command recommendations*
 
 ### Ansible Automation
 <p align="center">
-  <img src="docs/images/ansible.png" alt="Ansible" width="700">
+  <img src="docs/screenshots/ansible.png" alt="Ansible" width="700">
 </p>
 
-*Visual playbook editor with drag-and-drop task management*
+*Playbook management with run history and inventory tracking*
+
+### Playbook Editor
+<p align="center">
+  <img src="docs/screenshots/playbook-editor.png" alt="Playbook Editor" width="700">
+</p>
+
+*Visual playbook editor with drag-and-drop task templates for Ansible automation*
 
 ### Terraform IaC
 <p align="center">
-  <img src="docs/images/terraform.png" alt="Terraform" width="700">
+  <img src="docs/screenshots/terraform.png" alt="Terraform" width="700">
 </p>
 
-*Infrastructure as Code management with visual resource builder*
+*Infrastructure as Code management with workspace and resource tracking*
+
+### Terraform Builder
+<p align="center">
+  <img src="docs/screenshots/terraform-builder.png" alt="Terraform Builder" width="700">
+</p>
+
+*Visual configuration builder for AWS, GCP, Azure, Kubernetes, and Docker resources*
 
 ## Features
 

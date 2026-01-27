@@ -40,6 +40,7 @@ import {
   Wifi,
   WifiOff,
   Plus,
+  FileCode,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -47,6 +48,7 @@ import { trpc } from "@/lib/trpc";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { StopContainerDialog, RestartContainerDialog, DeleteContainerDialog } from "@/components/ConfirmDialog";
 import ContainerWizard from "@/components/ContainerWizard";
+import { DockerComposeEditor } from "@/components/DockerComposeEditor";
 
 const statusColors: Record<string, string> = {
   running: "bg-green-500/10 text-green-500 border-green-500/30",
@@ -67,6 +69,7 @@ export default function Docker() {
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [showComposeEditor, setShowComposeEditor] = useState(false);
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket({
@@ -179,6 +182,10 @@ export default function Docker() {
           <Button size="sm" onClick={() => setShowWizard(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Container
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowComposeEditor(true)}>
+            <FileCode className="h-4 w-4 mr-2" />
+            New Compose
           </Button>
         </div>
       </div>
@@ -632,6 +639,20 @@ export default function Docker() {
               setShowWizard(false);
             }}
             onCancel={() => setShowWizard(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Docker Compose Editor Dialog */}
+      <Dialog open={showComposeEditor} onOpenChange={setShowComposeEditor}>
+        <DialogContent className="max-w-6xl h-[90vh] p-0 overflow-hidden">
+          <DockerComposeEditor
+            onComplete={(yaml) => {
+              console.log("Docker Compose YAML:", yaml);
+              toast.success("Docker Compose configuration created! YAML has been generated.");
+              setShowComposeEditor(false);
+            }}
+            onCancel={() => setShowComposeEditor(false)}
           />
         </DialogContent>
       </Dialog>
