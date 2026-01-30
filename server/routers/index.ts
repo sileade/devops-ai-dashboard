@@ -21,3 +21,6 @@ export { incidentCommanderRouter } from "./incidentCommander";
 export { securityGuardianRouter } from "./securityGuardian";
 export { costOptimizerRouter } from "./costOptimizer";
 export { selfHealingRouter } from "./selfHealing";
+
+// ChatOps integration
+export { openclawRouter } from "./openclaw";

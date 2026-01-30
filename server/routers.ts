@@ -20,6 +20,7 @@ import {
   securityGuardianRouter,
   costOptimizerRouter,
   selfHealingRouter,
+  openclawRouter,
 } from "./routers/index";
 
 /**
@@ -55,6 +56,7 @@ export const appRouter = router({
   securityGuardian: securityGuardianRouter,
   costOptimizer: costOptimizerRouter,
   selfHealing: selfHealingRouter,
+  openclaw: openclawRouter,
 });
 
 export type AppRouter = typeof appRouter;

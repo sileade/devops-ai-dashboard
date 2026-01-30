@@ -1,0 +1,122 @@
+version: "3.8"
+
+# Docker Compose configuration for DevOps AI Dashboard with OpenClaw integration
+# This file extends the base configuration to add OpenClaw Gateway support
+
+services:
+  # DevOps AI Dashboard - Main Application
+  devops-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devops-ai-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCLAW_GATEWAY_URL=http://openclaw-gateway:18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - dashboard-data:/app/data
+    depends_on:
+      - openclaw-gateway
+    networks:
+      - devops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OpenClaw Gateway - AI Assistant & ChatOps
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-gateway
+    ports:
+      - "18789:18789"
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Webhook for DevOps Dashboard integration
+      - OPENCLAW_WEBHOOK_URL=http://devops-dashboard:3000/api/trpc/openclaw.handleWebhook
+    volumes:
+      - openclaw-config:/home/node/.openclaw
+      - openclaw-workspace:/home/node/.openclaw/workspace
+    networks:
+      - devops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "dist/index.js", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OpenClaw CLI - For channel setup and management
+  openclaw-cli:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-cli
+    profiles:
+      - cli
+    environment:
+      - OPENCLAW_GATEWAY_URL=http://openclaw-gateway:18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - openclaw-config:/home/node/.openclaw
+      - openclaw-workspace:/home/node/.openclaw/workspace
+    networks:
+      - devops-network
+    entrypoint: ["openclaw"]
+    command: ["--help"]
+
+  # Optional: MySQL/TiDB for persistent storage
+  database:
+    image: mysql:8.0
+    container_name: devops-database
+    profiles:
+      - database
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-devops123}
+      - MYSQL_DATABASE=devops_dashboard
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - devops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    container_name: devops-redis
+    profiles:
+      - cache
+    volumes:
+      - redis-data:/data
+    networks:
+      - devops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  devops-network:
+    driver: bridge
+
+volumes:
+  dashboard-data:
+  openclaw-config:
+  openclaw-workspace:
+  mysql-data:
+  redis-data:
