@@ -705,3 +705,137 @@ MIT License - see LICENSE file for details.
 - Charts powered by [Recharts](https://recharts.org/)
 - Real-time updates via [Socket.IO](https://socket.io/)
 - Database ORM by [Drizzle](https://orm.drizzle.team/)
+
+
+## New AI-Powered DevOps Modules
+
+The platform has been extended with comprehensive AI-powered modules designed to replace 90-100% of manual DevOps engineering tasks.
+
+### 🚨 AI Incident Commander (`/incident-commander`)
+
+Autonomous incident detection, diagnosis, and remediation with human-in-the-loop for critical decisions.
+
+**Features:**
+- Automatic incident detection from metrics/logs anomalies
+- AI-powered root cause analysis using LLM
+- Automated runbook execution with step-by-step tracking
+- Post-mortem generation with actionable insights
+- Intelligent escalation policies
+- Incident timeline visualization
+
+**Key Endpoints:**
+- `incidentCommander.list` - List all incidents
+- `incidentCommander.create` - Create incident with AI analysis
+- `incidentCommander.executeRunbook` - Execute automated runbook
+- `incidentCommander.generatePostMortem` - Generate AI post-mortem
+
+### 🛡️ AI Security Guardian (`/security-guardian`)
+
+Continuous security monitoring and automated remediation with compliance tracking.
+
+**Features:**
+- Container image vulnerability scanning
+- Kubernetes security posture assessment
+- Secrets detection and rotation
+- Compliance monitoring (SOC2, HIPAA, PCI-DSS)
+- Automated patching with risk assessment
+- Security policy enforcement (audit/warn/block)
+
+**Key Endpoints:**
+- `securityGuardian.scan` - Initiate security scan
+- `securityGuardian.getVulnerabilities` - Get detected vulnerabilities
+- `securityGuardian.checkCompliance` - Run compliance check
+- `securityGuardian.togglePolicy` - Enable/disable security policy
+
+### 💰 AI Cost Optimizer (`/cost-optimizer`)
+
+Real-time cost monitoring and AI-powered optimization recommendations.
+
+**Features:**
+- Real-time cost monitoring across providers
+- Rightsizing recommendations with AI reasoning
+- Idle resource detection
+- Reserved/Spot instance optimization
+- Budget alerting and forecasting
+- Cost breakdown by resource type, environment, and tags
+
+**Key Endpoints:**
+- `costOptimizer.getCosts` - Get cost breakdown
+- `costOptimizer.getRecommendations` - Get AI optimization recommendations
+- `costOptimizer.applyRecommendation` - Apply cost optimization
+- `costOptimizer.getForecast` - Get cost forecast
+
+### 🔄 Self-Healing Engine (`/self-healing`)
+
+Autonomous infrastructure recovery with learned patterns.
+
+**Features:**
+- Automatic container/pod restart on failure
+- Resource scaling on anomalies
+- Configuration drift correction
+- Rollback on deployment failures
+- Machine learning from past incidents
+- Pattern recognition for proactive healing
+
+**Key Endpoints:**
+- `selfHealing.listRules` - List healing rules
+- `selfHealing.createRule` - Create new healing rule
+- `selfHealing.triggerHealing` - Manually trigger healing action
+- `selfHealing.getPatterns` - Get learned patterns
+
+## Extended Database Schema
+
+New tables for AI-powered modules:
+
+| Table | Purpose |
+|-------|---------|
+| `incidents` | Incident records with AI analysis |
+| `incident_actions` | Actions taken during incident response |
+| `runbooks` | Automated runbook definitions |
+| `runbook_executions` | Runbook execution history |
+| `security_scans` | Security scan results |
+| `vulnerabilities` | Detected vulnerabilities |
+| `security_policies` | Security policy definitions |
+| `compliance_reports` | Compliance audit reports |
+| `cost_records` | Historical cost data |
+| `cost_recommendations` | AI-generated cost recommendations |
+| `budget_alerts` | Budget threshold configurations |
+| `pipelines` | CI/CD pipeline definitions |
+| `healing_rules` | Self-healing rule definitions |
+| `healing_actions` | Executed healing actions |
+| `healing_patterns` | Learned recovery patterns |
+| `ai_learning_feedback` | AI learning feedback loop |
+
+## Architecture Extension
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Extended AI Layer                             │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐            │
+│  │   Incident   │ │   Security   │ │     Cost     │            │
+│  │  Commander   │ │   Guardian   │ │  Optimizer   │            │
+│  │     AI       │ │      AI      │ │      AI      │            │
+│  └──────────────┘ └──────────────┘ └──────────────┘            │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐            │
+│  │ Self-Healing │ │     Doc      │ │    CI/CD     │            │
+│  │    Engine    │ │  Generator   │ │ Orchestrator │            │
+│  └──────────────┘ └──────────────┘ └──────────────┘            │
+├─────────────────────────────────────────────────────────────────┤
+│                    Learning Layer                                │
+│  (Pattern Recognition + Feedback Loop + Model Training)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Roadmap (Updated)
+
+- [x] AI Incident Commander
+- [x] AI Security Guardian (DevSecOps)
+- [x] AI Cost Optimizer (FinOps)
+- [x] Self-Healing Engine
+- [ ] CI/CD Pipeline AI Orchestrator
+- [ ] AI Documentation Generator
+- [ ] GitOps integration (ArgoCD, Flux)
+- [ ] Multi-cloud support (AWS, GCP, Azure)
+- [ ] Prometheus/Grafana deep integration
+- [ ] Ansible Semaphore integration
+- [ ] NetBox as Source of Truth
