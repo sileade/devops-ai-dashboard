@@ -16,6 +16,10 @@ import {
   autoscalingRouter,
   scheduledScalingRouter,
   abTestingRouter,
+  incidentCommanderRouter,
+  securityGuardianRouter,
+  costOptimizerRouter,
+  selfHealingRouter,
 } from "./routers/index";
 
 /**
@@ -47,6 +51,10 @@ export const appRouter = router({
   autoscaling: autoscalingRouter,
   scheduledScaling: scheduledScalingRouter,
   abTesting: abTestingRouter,
+  incidentCommander: incidentCommanderRouter,
+  securityGuardian: securityGuardianRouter,
+  costOptimizer: costOptimizerRouter,
+  selfHealing: selfHealingRouter,
 });
 
 export type AppRouter = typeof appRouter;

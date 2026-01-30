@@ -134,7 +134,8 @@ Provide:
       ]
     });
 
-    return response.choices[0]?.message?.content || "Unable to analyze incident";
+    const content = response.choices[0]?.message?.content;
+    return typeof content === 'string' ? content : (Array.isArray(content) ? content.map(c => 'text' in c ? c.text : '').join('') : "Unable to analyze incident");
   } catch (error) {
     console.error("AI incident analysis error:", error);
     return "AI analysis unavailable. Manual investigation required.";
@@ -177,7 +178,8 @@ Generate a structured post-mortem with:
       ]
     });
 
-    return response.choices[0]?.message?.content || "Unable to generate post-mortem";
+    const content = response.choices[0]?.message?.content;
+    return typeof content === 'string' ? content : (Array.isArray(content) ? content.map(c => 'text' in c ? c.text : '').join('') : "Unable to generate post-mortem");
   } catch (error) {
     console.error("Post-mortem generation error:", error);
     return "Post-mortem generation failed. Please create manually.";
@@ -186,7 +188,7 @@ Generate a structured post-mortem with:
 
 async function suggestRunbook(incident: Incident): Promise<Runbook | null> {
   // Find matching runbook based on incident characteristics
-  for (const [, runbook] of runbooks) {
+  for (const runbook of Array.from(runbooks.values())) {
     const conditions = runbook.triggerConditions;
     
     // Simple matching logic (can be enhanced with AI)
@@ -196,7 +198,7 @@ async function suggestRunbook(incident: Incident): Promise<Runbook | null> {
     if (incident.title.toLowerCase().includes("cpu") && conditions.metric === "cpu_usage") {
       return runbook;
     }
-    if (incident.title.toLowerCase().includes("connection") && conditions.error?.includes("connection")) {
+    if (incident.title.toLowerCase().includes("connection") && typeof conditions.error === 'string' && conditions.error.includes("connection")) {
       return runbook;
     }
   }
@@ -397,7 +399,7 @@ export const incidentCommanderRouter = router({
     .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
-      triggerConditions: z.record(z.unknown()),
+      triggerConditions: z.record(z.string(), z.unknown()),
       steps: z.array(z.object({
         order: z.number(),
         name: z.string(),
@@ -430,7 +432,7 @@ export const incidentCommanderRouter = router({
     .input(z.object({
       incidentId: z.number(),
       runbookId: z.number(),
-      variables: z.record(z.string()).optional(),
+      variables: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
       const incident = incidents.get(input.incidentId);

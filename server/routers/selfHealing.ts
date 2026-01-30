@@ -35,17 +35,22 @@ interface HealingAction {
   ruleName: string;
   targetResource: string;
   triggerReason: string;
+  reason?: string;
   actionTaken: string;
   status: "pending" | "executing" | "success" | "failed" | "rolled_back";
   result?: string;
+  errorMessage?: string;
   rollbackAction?: string;
+  triggeredAt: Date;
   executedAt: Date;
   completedAt?: Date;
 }
 
 interface HealingPattern {
   id: number;
+  name: string;
   patternName: string;
+  description: string;
   symptomSignature: Record<string, unknown>;
   successfulActions: string[];
   failedActions: string[];
@@ -166,7 +171,9 @@ const initializeDefaultRules = () => {
   // Initialize sample patterns
   const samplePatterns: Omit<HealingPattern, "id">[] = [
     {
+      name: "Memory Leak Recovery",
       patternName: "Memory Leak Recovery",
+      description: "Detected pattern of linear memory growth leading to OOM, successfully resolved by restart or memory limit increase",
       symptomSignature: { memoryGrowth: "linear", duration: ">1h", restartCount: ">2" },
       successfulActions: ["restart", "increase_memory_limit"],
       failedActions: ["scale_up"],
@@ -175,7 +182,9 @@ const initializeDefaultRules = () => {
       lastOccurrence: new Date(),
     },
     {
+      name: "Connection Pool Exhaustion",
       patternName: "Connection Pool Exhaustion",
+      description: "Database connection pool exhaustion causing connection refused errors, resolved by pod restart or pool size increase",
       symptomSignature: { errorPattern: "connection refused", targetService: "database" },
       successfulActions: ["restart_pods", "increase_pool_size"],
       failedActions: [],
@@ -217,7 +226,8 @@ Provide:
       ]
     });
 
-    const content = response.choices[0]?.message?.content || "";
+    const rawContent = response.choices[0]?.message?.content;
+    const content = typeof rawContent === 'string' ? rawContent : (Array.isArray(rawContent) ? rawContent.map(c => 'text' in c ? c.text : '').join('') : "");
     
     // Parse response (simplified)
     return {
@@ -295,11 +305,11 @@ export const selfHealingRouter = router({
       name: z.string().min(1),
       description: z.string().optional(),
       conditionType: z.string(),
-      conditionConfig: z.record(z.unknown()),
+      conditionConfig: z.record(z.string(), z.unknown()),
       actionType: z.string(),
-      actionConfig: z.record(z.unknown()),
+      actionConfig: z.record(z.string(), z.unknown()),
       targetType: z.enum(["container", "pod", "deployment", "service", "node"]),
-      targetSelector: z.record(z.string()).optional(),
+      targetSelector: z.record(z.string(), z.string()).optional(),
       cooldownSeconds: z.number().min(0).optional().default(300),
       maxRetries: z.number().min(1).max(10).optional().default(3),
       requiresApproval: z.boolean().optional().default(false),
@@ -334,8 +344,8 @@ export const selfHealingRouter = router({
       id: z.number(),
       name: z.string().optional(),
       description: z.string().optional(),
-      conditionConfig: z.record(z.unknown()).optional(),
-      actionConfig: z.record(z.unknown()).optional(),
+      conditionConfig: z.record(z.string(), z.unknown()).optional(),
+      actionConfig: z.record(z.string(), z.unknown()).optional(),
       cooldownSeconds: z.number().optional(),
       maxRetries: z.number().optional(),
       requiresApproval: z.boolean().optional(),
@@ -418,8 +428,10 @@ export const selfHealingRouter = router({
         ruleName: rule.name,
         targetResource: input.targetResource,
         triggerReason: input.reason || "Manual trigger",
+        reason: input.reason,
         actionTaken: rule.actionType,
         status: "executing",
+        triggeredAt: new Date(),
         executedAt: new Date(),
       };
       
@@ -491,7 +503,7 @@ export const selfHealingRouter = router({
   // Analyze symptoms and get recommendations
   analyzeSymptoms: publicProcedure
     .input(z.object({
-      symptoms: z.record(z.unknown()),
+      symptoms: z.record(z.string(), z.unknown()),
     }))
     .mutation(async ({ input }) => {
       return await analyzeSymptoms(input.symptoms);

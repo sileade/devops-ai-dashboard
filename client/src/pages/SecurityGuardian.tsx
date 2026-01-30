@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Shield, ShieldAlert, ShieldCheck, Scan, AlertTriangle, CheckCircle, FileWarning, Lock, Eye } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, Scan, AlertTriangle, FileWarning, Lock, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SecurityGuardian() {
@@ -22,59 +21,37 @@ export default function SecurityGuardian() {
   const [scanTarget, setScanTarget] = useState({ type: "container" as const, target: "" });
   const [selectedFramework, setSelectedFramework] = useState<"SOC2" | "HIPAA" | "PCI-DSS">("SOC2");
 
+  const utils = trpc.useUtils();
+
   // Queries
-  const { data: stats, refetch: refetchStats } = useQuery({
-    queryKey: ["security-stats"],
-    queryFn: () => trpc.securityGuardian.getStats.query(),
-  });
-
-  const { data: scans, refetch: refetchScans } = useQuery({
-    queryKey: ["security-scans"],
-    queryFn: () => trpc.securityGuardian.listScans.query(),
-  });
-
-  const { data: vulnerabilities } = useQuery({
-    queryKey: ["vulnerabilities"],
-    queryFn: () => trpc.securityGuardian.getVulnerabilities.query(),
-  });
-
-  const { data: policies, refetch: refetchPolicies } = useQuery({
-    queryKey: ["security-policies"],
-    queryFn: () => trpc.securityGuardian.listPolicies.query(),
-  });
-
-  const { data: complianceReports } = useQuery({
-    queryKey: ["compliance-reports"],
-    queryFn: () => trpc.securityGuardian.listComplianceReports.query(),
-  });
+  const { data: stats } = trpc.securityGuardian.getStats.useQuery();
+  const { data: scans } = trpc.securityGuardian.listScans.useQuery();
+  const { data: vulnerabilities } = trpc.securityGuardian.getVulnerabilities.useQuery();
+  const { data: policies } = trpc.securityGuardian.listPolicies.useQuery();
+  const { data: complianceReports } = trpc.securityGuardian.listComplianceReports.useQuery();
 
   // Mutations
-  const startScanMutation = useMutation({
-    mutationFn: (data: { scanType: "container" | "kubernetes" | "secrets" | "compliance" | "dependencies"; target: string }) =>
-      trpc.securityGuardian.scan.mutate(data),
+  const startScanMutation = trpc.securityGuardian.scan.useMutation({
     onSuccess: () => {
       toast.success("Security scan started");
       setScanDialogOpen(false);
-      refetchScans();
-      refetchStats();
+      utils.securityGuardian.listScans.invalidate();
+      utils.securityGuardian.getStats.invalidate();
     },
   });
 
-  const checkComplianceMutation = useMutation({
-    mutationFn: (framework: "SOC2" | "HIPAA" | "PCI-DSS") =>
-      trpc.securityGuardian.checkCompliance.mutate({ framework }),
+  const checkComplianceMutation = trpc.securityGuardian.checkCompliance.useMutation({
     onSuccess: () => {
       toast.success("Compliance check completed");
       setComplianceDialogOpen(false);
+      utils.securityGuardian.listComplianceReports.invalidate();
     },
   });
 
-  const togglePolicyMutation = useMutation({
-    mutationFn: (data: { id: number; enabled: boolean }) =>
-      trpc.securityGuardian.togglePolicy.mutate(data),
+  const togglePolicyMutation = trpc.securityGuardian.togglePolicy.useMutation({
     onSuccess: () => {
       toast.success("Policy updated");
-      refetchPolicies();
+      utils.securityGuardian.listPolicies.invalidate();
     },
   });
 
@@ -141,7 +118,7 @@ export default function SecurityGuardian() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setComplianceDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={() => checkComplianceMutation.mutate(selectedFramework)}>
+                  <Button onClick={() => checkComplianceMutation.mutate({ framework: selectedFramework })}>
                     Run Check
                   </Button>
                 </DialogFooter>

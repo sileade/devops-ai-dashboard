@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,55 +24,39 @@ export default function IncidentCommander() {
     affectedResources: "",
   });
 
+  const utils = trpc.useUtils();
+
   // Queries
-  const { data: incidents, refetch: refetchIncidents } = useQuery({
-    queryKey: ["incidents"],
-    queryFn: () => trpc.incidentCommander.list.query(),
-  });
-
-  const { data: stats } = useQuery({
-    queryKey: ["incident-stats"],
-    queryFn: () => trpc.incidentCommander.getStats.query(),
-  });
-
-  const { data: runbooks } = useQuery({
-    queryKey: ["runbooks"],
-    queryFn: () => trpc.incidentCommander.listRunbooks.query(),
-  });
-
-  const { data: selectedIncidentData } = useQuery({
-    queryKey: ["incident", selectedIncident],
-    queryFn: () => selectedIncident ? trpc.incidentCommander.get.query({ id: selectedIncident }) : null,
-    enabled: !!selectedIncident,
-  });
+  const { data: incidents } = trpc.incidentCommander.list.useQuery();
+  const { data: stats } = trpc.incidentCommander.getStats.useQuery();
+  const { data: runbooks } = trpc.incidentCommander.listRunbooks.useQuery();
+  const { data: selectedIncidentData } = trpc.incidentCommander.get.useQuery(
+    { id: selectedIncident! },
+    { enabled: !!selectedIncident }
+  );
 
   // Mutations
-  const createIncidentMutation = useMutation({
-    mutationFn: (data: typeof newIncident) => trpc.incidentCommander.create.mutate({
-      ...data,
-      affectedResources: data.affectedResources.split(",").map(r => r.trim()).filter(Boolean),
-    }),
+  const createIncidentMutation = trpc.incidentCommander.create.useMutation({
     onSuccess: () => {
       toast.success("Incident created and AI analysis started");
       setCreateDialogOpen(false);
       setNewIncident({ title: "", description: "", severity: "medium", affectedResources: "" });
-      refetchIncidents();
+      utils.incidentCommander.list.invalidate();
+      utils.incidentCommander.getStats.invalidate();
     },
   });
 
-  const acknowledgeIncidentMutation = useMutation({
-    mutationFn: (id: number) => trpc.incidentCommander.acknowledge.mutate({ id }),
+  const acknowledgeIncidentMutation = trpc.incidentCommander.acknowledge.useMutation({
     onSuccess: () => {
       toast.success("Incident acknowledged");
-      refetchIncidents();
+      utils.incidentCommander.list.invalidate();
+      utils.incidentCommander.get.invalidate();
     },
   });
 
-  const generatePostMortemMutation = useMutation({
-    mutationFn: (id: number) => trpc.incidentCommander.generatePostMortem.mutate({ id }),
+  const generatePostMortemMutation = trpc.incidentCommander.generatePostMortem.useMutation({
     onSuccess: (data) => {
       toast.success("Post-mortem generated");
-      // Could open a modal to show the post-mortem
       console.log(data.postMortem);
     },
   });
@@ -98,6 +81,13 @@ export default function IncidentCommander() {
     }
   };
 
+  const handleCreateIncident = () => {
+    createIncidentMutation.mutate({
+      ...newIncident,
+      affectedResources: newIncident.affectedResources.split(",").map(r => r.trim()).filter(Boolean),
+    });
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -120,7 +110,7 @@ export default function IncidentCommander() {
               <DialogHeader>
                 <DialogTitle>Report New Incident</DialogTitle>
                 <DialogDescription>
-                  Create a new incident. AI will automatically analyze and suggest remediation.
+                  Create a new incident report. AI will automatically analyze and suggest remediation.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -162,15 +152,13 @@ export default function IncidentCommander() {
                   <Input
                     value={newIncident.affectedResources}
                     onChange={(e) => setNewIncident({ ...newIncident, affectedResources: e.target.value })}
-                    placeholder="api-server, database, cache"
+                    placeholder="e.g., api-server, database, cache"
                   />
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => createIncidentMutation.mutate(newIncident)}>
-                  Create Incident
-                </Button>
+                <Button onClick={handleCreateIncident}>Create Incident</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -180,42 +168,39 @@ export default function IncidentCommander() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Active Incidents</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Incidents</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.total || 0}</div>
+            </CardContent>
+          </Card>
+          <Card className="border-red-500/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                Critical
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-500">{stats?.bySeverity?.critical || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Active</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 {(stats?.byStatus?.detected || 0) + (stats?.byStatus?.investigating || 0) + (stats?.byStatus?.mitigating || 0)}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {stats?.byStatus?.detected || 0} detected, {stats?.byStatus?.investigating || 0} investigating
-              </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Critical</CardTitle>
+              <CardTitle className="text-sm font-medium">Avg Resolution</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-500">{stats?.bySeverity?.critical || 0}</div>
-              <p className="text-xs text-muted-foreground">Requires immediate attention</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Avg Resolution Time</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.avgResolutionTime || 0} min</div>
-              <p className="text-xs text-muted-foreground">Based on resolved incidents</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Runbooks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.runbooksCount || 0}</div>
-              <p className="text-xs text-muted-foreground">Automated remediation playbooks</p>
+              <div className="text-2xl font-bold">{stats?.avgResolutionTime || 0}m</div>
             </CardContent>
           </Card>
         </div>
@@ -336,7 +321,7 @@ export default function IncidentCommander() {
                         {selectedIncidentData.status === "detected" && (
                           <Button
                             size="sm"
-                            onClick={() => acknowledgeIncidentMutation.mutate(selectedIncidentData.id)}
+                            onClick={() => acknowledgeIncidentMutation.mutate({ id: selectedIncidentData.id })}
                           >
                             Acknowledge
                           </Button>
@@ -345,7 +330,7 @@ export default function IncidentCommander() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => generatePostMortemMutation.mutate(selectedIncidentData.id)}
+                            onClick={() => generatePostMortemMutation.mutate({ id: selectedIncidentData.id })}
                           >
                             <FileText className="mr-2 h-4 w-4" />
                             Generate Post-Mortem

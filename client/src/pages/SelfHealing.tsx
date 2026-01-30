@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,103 +8,74 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Activity, Zap, RefreshCw, CheckCircle, XCircle, Clock, Brain, Shield, Settings, Play, RotateCcw } from "lucide-react";
+import { Activity, Bot, Brain, CheckCircle, Clock, Play, RefreshCw, Settings, Shield, XCircle, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SelfHealing() {
   const [createRuleDialogOpen, setCreateRuleDialogOpen] = useState(false);
-  const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
-  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
-  const [triggerTarget, setTriggerTarget] = useState("");
   const [newRule, setNewRule] = useState({
     name: "",
     description: "",
-    conditionType: "container_status",
+    conditionType: "metric_threshold",
     actionType: "restart",
-    targetType: "container" as "container" | "pod" | "deployment" | "service" | "node",
+    targetType: "pod" as "container" | "pod" | "deployment" | "service" | "node",
     cooldownSeconds: 300,
     maxRetries: 3,
     requiresApproval: false,
   });
 
+  const utils = trpc.useUtils();
+
   // Queries
-  const { data: stats } = useQuery({
-    queryKey: ["healing-stats"],
-    queryFn: () => trpc.selfHealing.getStats.query(),
-  });
-
-  const { data: rules, refetch: refetchRules } = useQuery({
-    queryKey: ["healing-rules"],
-    queryFn: () => trpc.selfHealing.listRules.query(),
-  });
-
-  const { data: history, refetch: refetchHistory } = useQuery({
-    queryKey: ["healing-history"],
-    queryFn: () => trpc.selfHealing.getHistory.query(),
-  });
-
-  const { data: patterns } = useQuery({
-    queryKey: ["healing-patterns"],
-    queryFn: () => trpc.selfHealing.getPatterns.query(),
-  });
-
-  const { data: effectiveness } = useQuery({
-    queryKey: ["rule-effectiveness"],
-    queryFn: () => trpc.selfHealing.getRuleEffectiveness.query(),
-  });
+  const { data: stats } = trpc.selfHealing.getStats.useQuery();
+  const { data: rules } = trpc.selfHealing.listRules.useQuery();
+  const { data: actions } = trpc.selfHealing.getHistory.useQuery();
+  const { data: patterns } = trpc.selfHealing.getPatterns.useQuery();
+  const { data: effectiveness } = trpc.selfHealing.getRuleEffectiveness.useQuery();
 
   // Mutations
-  const createRuleMutation = useMutation({
-    mutationFn: (data: typeof newRule) => trpc.selfHealing.createRule.mutate({
-      ...data,
-      conditionConfig: { type: data.conditionType },
-      actionConfig: { type: data.actionType },
-    }),
+  const createRuleMutation = trpc.selfHealing.createRule.useMutation({
     onSuccess: () => {
       toast.success("Healing rule created");
       setCreateRuleDialogOpen(false);
       setNewRule({
         name: "",
         description: "",
-        conditionType: "container_status",
+        conditionType: "metric_threshold",
         actionType: "restart",
-        targetType: "container",
+        targetType: "pod",
         cooldownSeconds: 300,
         maxRetries: 3,
         requiresApproval: false,
       });
-      refetchRules();
+      utils.selfHealing.listRules.invalidate();
+      utils.selfHealing.getStats.invalidate();
     },
   });
 
-  const toggleRuleMutation = useMutation({
-    mutationFn: (data: { id: number; enabled: boolean }) => trpc.selfHealing.toggleRule.mutate(data),
+  const toggleRuleMutation = trpc.selfHealing.toggleRule.useMutation({
     onSuccess: () => {
-      refetchRules();
+      utils.selfHealing.listRules.invalidate();
+      utils.selfHealing.getStats.invalidate();
     },
   });
 
-  const triggerHealingMutation = useMutation({
-    mutationFn: (data: { ruleId: number; targetResource: string }) =>
-      trpc.selfHealing.triggerHealing.mutate(data),
+  const triggerHealingMutation = trpc.selfHealing.triggerHealing.useMutation({
     onSuccess: () => {
       toast.success("Healing action triggered");
-      setTriggerDialogOpen(false);
-      setTriggerTarget("");
-      refetchHistory();
+      utils.selfHealing.getHistory.invalidate();
+      utils.selfHealing.getStats.invalidate();
     },
   });
 
-  const rollbackActionMutation = useMutation({
-    mutationFn: (actionId: number) => trpc.selfHealing.rollbackAction.mutate({ actionId }),
+  const approveActionMutation = trpc.selfHealing.approveAction.useMutation({
     onSuccess: () => {
-      toast.success("Action rolled back");
-      refetchHistory();
+      toast.success("Action approved and executed");
+      utils.selfHealing.getHistory.invalidate();
+      utils.selfHealing.getStats.invalidate();
     },
   });
 
@@ -115,20 +85,26 @@ export default function SelfHealing() {
       case "failed": return <XCircle className="h-4 w-4 text-red-500" />;
       case "executing": return <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />;
       case "pending": return <Clock className="h-4 w-4 text-yellow-500" />;
-      case "rolled_back": return <RotateCcw className="h-4 w-4 text-orange-500" />;
       default: return <Activity className="h-4 w-4" />;
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "success": return "bg-green-500";
-      case "failed": return "bg-red-500";
-      case "executing": return "bg-blue-500";
-      case "pending": return "bg-yellow-500";
-      case "rolled_back": return "bg-orange-500";
-      default: return "bg-gray-500";
+  const getActionTypeIcon = (type: string) => {
+    switch (type) {
+      case "restart": return <RefreshCw className="h-4 w-4" />;
+      case "scale_up": return <Zap className="h-4 w-4" />;
+      case "scale_down": return <Activity className="h-4 w-4" />;
+      case "rollback": return <RefreshCw className="h-4 w-4" />;
+      default: return <Settings className="h-4 w-4" />;
     }
+  };
+
+  const handleCreateRule = () => {
+    createRuleMutation.mutate({
+      ...newRule,
+      conditionConfig: {},
+      actionConfig: {},
+    });
   };
 
   return (
@@ -139,7 +115,7 @@ export default function SelfHealing() {
           <div>
             <h1 className="text-3xl font-bold">Self-Healing Engine</h1>
             <p className="text-muted-foreground">
-              Autonomous infrastructure recovery with learned patterns
+              Autonomous infrastructure recovery with machine learning
             </p>
           </div>
           <Dialog open={createRuleDialogOpen} onOpenChange={setCreateRuleDialogOpen}>
@@ -149,46 +125,45 @@ export default function SelfHealing() {
                 Create Rule
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create Healing Rule</DialogTitle>
                 <DialogDescription>
-                  Define conditions and actions for automatic recovery
+                  Define conditions and actions for automatic infrastructure healing
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Name</Label>
+                  <Label>Rule Name</Label>
                   <Input
                     value={newRule.name}
                     onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
-                    placeholder="e.g., Restart Crashed Containers"
+                    placeholder="e.g., Auto-restart on OOM"
                   />
                 </div>
                 <div>
                   <Label>Description</Label>
-                  <Textarea
+                  <Input
                     value={newRule.description}
                     onChange={(e) => setNewRule({ ...newRule, description: e.target.value })}
-                    placeholder="Describe when and how this rule should trigger"
+                    placeholder="What this rule does"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Target Type</Label>
+                    <Label>Condition Type</Label>
                     <Select
-                      value={newRule.targetType}
-                      onValueChange={(v) => setNewRule({ ...newRule, targetType: v as typeof newRule.targetType })}
+                      value={newRule.conditionType}
+                      onValueChange={(v) => setNewRule({ ...newRule, conditionType: v })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="container">Container</SelectItem>
-                        <SelectItem value="pod">Pod</SelectItem>
-                        <SelectItem value="deployment">Deployment</SelectItem>
-                        <SelectItem value="service">Service</SelectItem>
-                        <SelectItem value="node">Node</SelectItem>
+                        <SelectItem value="metric_threshold">Metric Threshold</SelectItem>
+                        <SelectItem value="error_rate">Error Rate</SelectItem>
+                        <SelectItem value="health_check">Health Check</SelectItem>
+                        <SelectItem value="event">Event-based</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -206,10 +181,28 @@ export default function SelfHealing() {
                         <SelectItem value="scale_up">Scale Up</SelectItem>
                         <SelectItem value="scale_down">Scale Down</SelectItem>
                         <SelectItem value="rollback">Rollback</SelectItem>
-                        <SelectItem value="cleanup">Cleanup</SelectItem>
+                        <SelectItem value="drain">Drain Node</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div>
+                  <Label>Target Type</Label>
+                  <Select
+                    value={newRule.targetType}
+                    onValueChange={(v) => setNewRule({ ...newRule, targetType: v as typeof newRule.targetType })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="container">Container</SelectItem>
+                      <SelectItem value="pod">Pod</SelectItem>
+                      <SelectItem value="deployment">Deployment</SelectItem>
+                      <SelectItem value="service">Service</SelectItem>
+                      <SelectItem value="node">Node</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -236,12 +229,12 @@ export default function SelfHealing() {
                     checked={newRule.requiresApproval}
                     onCheckedChange={(v) => setNewRule({ ...newRule, requiresApproval: v })}
                   />
-                  <Label>Requires approval before execution</Label>
+                  <Label>Require manual approval before execution</Label>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateRuleDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => createRuleMutation.mutate(newRule)}>Create Rule</Button>
+                <Button onClick={handleCreateRule}>Create Rule</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -251,28 +244,14 @@ export default function SelfHealing() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Active Rules
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">Total Rules</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.enabledRules || 0}</div>
-              <p className="text-xs text-muted-foreground">of {stats?.totalRules || 0} total</p>
+              <div className="text-2xl font-bold">{stats?.totalRules || 0}</div>
+              <p className="text-xs text-muted-foreground">{stats?.enabledRules || 0} enabled</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Zap className="h-4 w-4 text-blue-500" />
-                Total Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalActions || 0}</div>
-            </CardContent>
-          </Card>
-          <Card>
+          <Card className="border-green-500/50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500" />
@@ -282,6 +261,15 @@ export default function SelfHealing() {
             <CardContent>
               <div className="text-2xl font-bold text-green-500">{stats?.successRate || 0}%</div>
               <p className="text-xs text-muted-foreground">{stats?.successfulActions || 0} successful</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.totalActions || 0}</div>
+              <p className="text-xs text-red-500">{stats?.failedActions || 0} failed</p>
             </CardContent>
           </Card>
           <Card>
@@ -314,7 +302,7 @@ export default function SelfHealing() {
         <Tabs defaultValue="rules">
           <TabsList>
             <TabsTrigger value="rules">Healing Rules</TabsTrigger>
-            <TabsTrigger value="history">Action History</TabsTrigger>
+            <TabsTrigger value="actions">Recent Actions</TabsTrigger>
             <TabsTrigger value="patterns">Learned Patterns</TabsTrigger>
             <TabsTrigger value="effectiveness">Effectiveness</TabsTrigger>
           </TabsList>
@@ -323,15 +311,15 @@ export default function SelfHealing() {
             <Card>
               <CardHeader>
                 <CardTitle>Healing Rules</CardTitle>
-                <CardDescription>Configure automatic recovery actions</CardDescription>
+                <CardDescription>Automated recovery rules for your infrastructure</CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-3">
                     {rules?.map((rule) => (
                       <div key={rule.id} className="p-4 border rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
                             <Switch
                               checked={rule.enabled}
                               onCheckedChange={(enabled) => toggleRuleMutation.mutate({ id: rule.id, enabled })}
@@ -339,96 +327,103 @@ export default function SelfHealing() {
                             <div>
                               <h4 className="font-medium">{rule.name}</h4>
                               <p className="text-sm text-muted-foreground">{rule.description}</p>
-                              <div className="mt-2 flex gap-2 flex-wrap">
-                                <Badge variant="outline">{rule.targetType}</Badge>
-                                <Badge variant="secondary">{rule.actionType}</Badge>
-                                <Badge variant="outline">Cooldown: {rule.cooldownSeconds}s</Badge>
-                                <Badge variant="outline">Max retries: {rule.maxRetries}</Badge>
-                                {rule.requiresApproval && (
-                                  <Badge>Requires Approval</Badge>
-                                )}
-                              </div>
-                              {rule.triggerCount > 0 && (
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  Triggered {rule.triggerCount} times • {rule.successCount} successful
-                                  {rule.lastTriggeredAt && ` • Last: ${new Date(rule.lastTriggeredAt).toLocaleString()}`}
-                                </p>
-                              )}
                             </div>
                           </div>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setSelectedRuleId(rule.id);
-                              setTriggerDialogOpen(true);
-                            }}
+                            onClick={() => triggerHealingMutation.mutate({ ruleId: rule.id, targetResource: "manual-test" })}
                           >
-                            <Play className="h-4 w-4" />
+                            <Play className="h-4 w-4 mr-1" />
+                            Test
                           </Button>
+                        </div>
+                        <div className="mt-3 flex gap-2 flex-wrap">
+                          <Badge variant="outline">{rule.conditionType}</Badge>
+                          <Badge variant="secondary">{rule.actionType}</Badge>
+                          <Badge variant="outline">{rule.targetType}</Badge>
+                          {rule.requiresApproval && (
+                            <Badge variant="destructive">Requires Approval</Badge>
+                          )}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Triggered {rule.triggerCount}x • Success: {rule.successCount}x • 
+                          Cooldown: {rule.cooldownSeconds}s • Max retries: {rule.maxRetries}
                         </div>
                       </div>
                     ))}
+                    {(!rules || rules.length === 0) && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No healing rules configured</p>
+                        <p className="text-sm">Create a rule to enable self-healing</p>
+                      </div>
+                    )}
                   </div>
                 </ScrollArea>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="history" className="mt-4">
+          <TabsContent value="actions" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Action History</CardTitle>
-                <CardDescription>Recent healing actions and their outcomes</CardDescription>
+                <CardTitle>Recent Healing Actions</CardTitle>
+                <CardDescription>History of automated recovery actions</CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-3">
-                    {history?.map((action) => (
+                    {actions?.map((action) => (
                       <div key={action.id} className="p-4 border rounded-lg">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3">
                             {getStatusIcon(action.status)}
                             <div>
                               <div className="flex items-center gap-2">
-                                <h4 className="font-medium">{action.ruleName}</h4>
-                                <Badge className={getStatusColor(action.status)}>
-                                  {action.status}
-                                </Badge>
+                                {getActionTypeIcon(action.actionTaken)}
+                                <h4 className="font-medium capitalize">{action.actionTaken}</h4>
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 Target: {action.targetResource}
                               </p>
-                              <p className="text-sm text-muted-foreground">
-                                Reason: {action.triggerReason}
-                              </p>
-                              {action.result && (
-                                <p className="text-sm mt-1">{action.result}</p>
-                              )}
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {new Date(action.executedAt).toLocaleString()}
-                                {action.completedAt && ` - ${new Date(action.completedAt).toLocaleString()}`}
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(action.triggeredAt).toLocaleString()}
+                                {action.completedAt && ` • Duration: ${Math.round((new Date(action.completedAt).getTime() - new Date(action.triggeredAt).getTime()) / 1000)}s`}
                               </p>
                             </div>
                           </div>
-                          {action.status === "success" && (
+                          <Badge variant={
+                            action.status === "success" ? "default" :
+                            action.status === "failed" ? "destructive" :
+                            action.status === "pending" ? "secondary" : "outline"
+                          }>
+                            {action.status}
+                          </Badge>
+                        </div>
+                        {action.reason && (
+                          <p className="mt-2 text-sm bg-accent p-2 rounded">{action.reason}</p>
+                        )}
+                        {action.status === "pending" && (
+                          <div className="mt-3">
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => rollbackActionMutation.mutate(action.id)}
+                              onClick={() => approveActionMutation.mutate({ actionId: action.id })}
                             >
-                              <RotateCcw className="h-4 w-4 mr-1" />
-                              Rollback
+                              Approve & Execute
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
+                        {action.status === "failed" && action.errorMessage && (
+                          <p className="mt-2 text-sm text-red-500">{action.errorMessage}</p>
+                        )}
                       </div>
                     ))}
-                    {(!history || history.length === 0) && (
+                    {(!actions || actions.length === 0) && (
                       <div className="text-center py-8 text-muted-foreground">
-                        <Shield className="h-12 w-12 mx-auto mb-4 text-green-500" />
+                        <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p>No healing actions yet</p>
-                        <p className="text-sm">Your infrastructure is running smoothly</p>
+                        <p className="text-sm">Actions will appear here when rules are triggered</p>
                       </div>
                     )}
                   </div>
@@ -441,60 +436,60 @@ export default function SelfHealing() {
             <Card>
               <CardHeader>
                 <CardTitle>Learned Patterns</CardTitle>
-                <CardDescription>AI-discovered recovery patterns from past incidents</CardDescription>
+                <CardDescription>AI-discovered patterns from healing history</CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-4">
                     {patterns?.map((pattern) => (
                       <div key={pattern.id} className="p-4 border rounded-lg">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
                             <Brain className="h-5 w-5 text-purple-500" />
-                            <h4 className="font-medium">{pattern.patternName}</h4>
                           </div>
-                          <Badge variant="secondary">
-                            {pattern.confidenceScore}% confidence
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          <div>
-                            <span className="text-sm text-muted-foreground">Symptom Signature:</span>
-                            <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-x-auto">
-                              {JSON.stringify(pattern.symptomSignature, null, 2)}
-                            </pre>
-                          </div>
-                          <div className="flex gap-4">
-                            <div>
-                              <span className="text-sm text-muted-foreground">Successful Actions:</span>
-                              <div className="flex gap-1 mt-1 flex-wrap">
-                                {pattern.successfulActions.map((a, i) => (
-                                  <Badge key={i} variant="outline" className="text-green-600">{a}</Badge>
-                                ))}
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium">{pattern.name}</h4>
+                              <Badge variant={pattern.confidenceScore >= 80 ? "default" : pattern.confidenceScore >= 50 ? "secondary" : "outline"}>
+                                {pattern.confidenceScore}% confidence
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">{pattern.description}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Occurrences:</span>
+                                <span className="ml-2 font-medium">{pattern.occurrenceCount}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Last seen:</span>
+                                <span className="ml-2">{new Date(pattern.lastOccurrence).toLocaleDateString()}</span>
                               </div>
                             </div>
+                            {pattern.successfulActions.length > 0 && (
+                              <div className="mt-2">
+                                <span className="text-sm text-muted-foreground">Successful actions: </span>
+                                {pattern.successfulActions.map((a, i) => (
+                                  <Badge key={i} variant="outline" className="ml-1 text-green-600">{a}</Badge>
+                                ))}
+                              </div>
+                            )}
                             {pattern.failedActions.length > 0 && (
-                              <div>
-                                <span className="text-sm text-muted-foreground">Failed Actions:</span>
-                                <div className="flex gap-1 mt-1 flex-wrap">
-                                  {pattern.failedActions.map((a, i) => (
-                                    <Badge key={i} variant="outline" className="text-red-600">{a}</Badge>
-                                  ))}
-                                </div>
+                              <div className="mt-1">
+                                <span className="text-sm text-muted-foreground">Failed actions: </span>
+                                {pattern.failedActions.map((a, i) => (
+                                  <Badge key={i} variant="outline" className="ml-1 text-red-600">{a}</Badge>
+                                ))}
                               </div>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Occurred {pattern.occurrenceCount} times • Last: {new Date(pattern.lastOccurrence).toLocaleString()}
-                          </p>
                         </div>
                       </div>
                     ))}
                     {(!patterns || patterns.length === 0) && (
                       <div className="text-center py-8 text-muted-foreground">
-                        <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p>No patterns learned yet</p>
-                        <p className="text-sm">Patterns will be discovered as healing actions are executed</p>
+                        <p className="text-sm">The system will learn from healing actions over time</p>
                       </div>
                     )}
                   </div>
@@ -516,16 +511,26 @@ export default function SelfHealing() {
                       <div key={rule.id} className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="font-medium">{rule.name}</h4>
-                          <Badge variant={rule.successRate >= 80 ? "default" : rule.successRate >= 50 ? "secondary" : "destructive"}>
-                            {rule.successRate}% success
-                          </Badge>
+                          <div className="text-right">
+                            <div className={`text-2xl font-bold ${rule.successRate >= 80 ? "text-green-500" : rule.successRate >= 50 ? "text-yellow-500" : "text-red-500"}`}>
+                              {rule.successRate}%
+                            </div>
+                            <p className="text-xs text-muted-foreground">success rate</p>
+                          </div>
                         </div>
-                        <Progress value={rule.successRate} className="h-2 mb-2" />
-                        <div className="flex justify-between text-sm text-muted-foreground">
-                          <span>{rule.successCount} successful / {rule.triggerCount} total</span>
-                          {rule.lastTriggered && (
-                            <span>Last: {new Date(rule.lastTriggered).toLocaleDateString()}</span>
-                          )}
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Triggers:</span>
+                            <span className="ml-2 font-medium">{rule.triggerCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Successes:</span>
+                            <span className="ml-2 font-medium text-green-500">{rule.successCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Last triggered:</span>
+                            <span className="ml-2">{rule.lastTriggered ? new Date(rule.lastTriggered).toLocaleDateString() : "Never"}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -542,40 +547,6 @@ export default function SelfHealing() {
             </Card>
           </TabsContent>
         </Tabs>
-
-        {/* Trigger Dialog */}
-        <Dialog open={triggerDialogOpen} onOpenChange={setTriggerDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Trigger Healing Action</DialogTitle>
-              <DialogDescription>
-                Manually trigger a healing action for a specific resource
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Target Resource</Label>
-                <Input
-                  value={triggerTarget}
-                  onChange={(e) => setTriggerTarget(e.target.value)}
-                  placeholder="e.g., nginx-deployment or container-id"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setTriggerDialogOpen(false)}>Cancel</Button>
-              <Button
-                onClick={() => {
-                  if (selectedRuleId && triggerTarget) {
-                    triggerHealingMutation.mutate({ ruleId: selectedRuleId, targetResource: triggerTarget });
-                  }
-                }}
-              >
-                Trigger Action
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </DashboardLayout>
   );

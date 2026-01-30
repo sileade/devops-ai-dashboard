@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,73 +24,48 @@ export default function CostOptimizer() {
     thresholdPercent: 80,
   });
 
+  const utils = trpc.useUtils();
+
   // Queries
-  const { data: stats } = useQuery({
-    queryKey: ["cost-stats"],
-    queryFn: () => trpc.costOptimizer.getStats.query(),
-  });
-
-  const { data: summary } = useQuery({
-    queryKey: ["cost-summary"],
-    queryFn: () => trpc.costOptimizer.getSummary.query(),
-  });
-
-  const { data: recommendations, refetch: refetchRecommendations } = useQuery({
-    queryKey: ["cost-recommendations"],
-    queryFn: () => trpc.costOptimizer.getRecommendations.query(),
-  });
-
-  const { data: budgetAlerts, refetch: refetchAlerts } = useQuery({
-    queryKey: ["budget-alerts"],
-    queryFn: () => trpc.costOptimizer.listBudgetAlerts.query(),
-  });
-
-  const { data: forecast } = useQuery({
-    queryKey: ["cost-forecast"],
-    queryFn: () => trpc.costOptimizer.getForecast.query(),
-  });
-
-  const { data: idleResources } = useQuery({
-    queryKey: ["idle-resources"],
-    queryFn: () => trpc.costOptimizer.getIdleResources.query(),
-  });
+  const { data: stats } = trpc.costOptimizer.getStats.useQuery();
+  const { data: summary } = trpc.costOptimizer.getSummary.useQuery();
+  const { data: recommendations } = trpc.costOptimizer.getRecommendations.useQuery();
+  const { data: budgetAlerts } = trpc.costOptimizer.listBudgetAlerts.useQuery();
+  const { data: forecast } = trpc.costOptimizer.getForecast.useQuery();
+  const { data: idleResources } = trpc.costOptimizer.getIdleResources.useQuery();
 
   // Mutations
-  const applyRecommendationMutation = useMutation({
-    mutationFn: (id: number) => trpc.costOptimizer.applyRecommendation.mutate({ id }),
+  const applyRecommendationMutation = trpc.costOptimizer.applyRecommendation.useMutation({
     onSuccess: () => {
       toast.success("Recommendation applied successfully");
-      refetchRecommendations();
+      utils.costOptimizer.getRecommendations.invalidate();
+      utils.costOptimizer.getStats.invalidate();
     },
   });
 
-  const dismissRecommendationMutation = useMutation({
-    mutationFn: (id: number) => trpc.costOptimizer.dismissRecommendation.mutate({ id }),
+  const dismissRecommendationMutation = trpc.costOptimizer.dismissRecommendation.useMutation({
     onSuccess: () => {
       toast.info("Recommendation dismissed");
-      refetchRecommendations();
+      utils.costOptimizer.getRecommendations.invalidate();
     },
   });
 
-  const createBudgetMutation = useMutation({
-    mutationFn: (data: typeof newBudget) => trpc.costOptimizer.createBudgetAlert.mutate(data),
+  const createBudgetMutation = trpc.costOptimizer.createBudgetAlert.useMutation({
     onSuccess: () => {
       toast.success("Budget alert created");
       setBudgetDialogOpen(false);
       setNewBudget({ name: "", budgetAmount: 1000, period: "monthly", thresholdPercent: 80 });
-      refetchAlerts();
+      utils.costOptimizer.listBudgetAlerts.invalidate();
     },
   });
 
-  const toggleBudgetMutation = useMutation({
-    mutationFn: (data: { id: number; enabled: boolean }) => trpc.costOptimizer.toggleBudgetAlert.mutate(data),
+  const toggleBudgetMutation = trpc.costOptimizer.toggleBudgetAlert.useMutation({
     onSuccess: () => {
-      refetchAlerts();
+      utils.costOptimizer.listBudgetAlerts.invalidate();
     },
   });
 
-  const getInsightsMutation = useMutation({
-    mutationFn: () => trpc.costOptimizer.getInsights.mutate(),
+  const getInsightsMutation = trpc.costOptimizer.getInsights.useMutation({
     onSuccess: (data) => {
       toast.success("AI insights generated");
       console.log(data.insights);
@@ -260,7 +234,7 @@ export default function CostOptimizer() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {Object.entries(summary.byResourceType).map(([type, cost]) => (
+                  {Object.entries(summary.byResourceType || {}).map(([type, cost]) => (
                     <div key={type} className="flex items-center justify-between">
                       <span className="text-sm capitalize">{type}</span>
                       <span className="font-medium">${(cost as number).toFixed(2)}</span>
@@ -275,7 +249,7 @@ export default function CostOptimizer() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {Object.entries(summary.byEnvironment).map(([env, cost]) => (
+                  {Object.entries(summary.byEnvironment || {}).map(([env, cost]) => (
                     <div key={env} className="flex items-center justify-between">
                       <span className="text-sm capitalize">{env}</span>
                       <span className="font-medium">${(cost as number).toFixed(2)}</span>
@@ -362,14 +336,14 @@ export default function CostOptimizer() {
                         <div className="mt-4 flex gap-2">
                           <Button
                             size="sm"
-                            onClick={() => applyRecommendationMutation.mutate(rec.id)}
+                            onClick={() => applyRecommendationMutation.mutate({ id: rec.id })}
                           >
                             Apply Recommendation
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => dismissRecommendationMutation.mutate(rec.id)}
+                            onClick={() => dismissRecommendationMutation.mutate({ id: rec.id })}
                           >
                             Dismiss
                           </Button>

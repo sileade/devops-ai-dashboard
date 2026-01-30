@@ -210,7 +210,8 @@ Provide:
       ]
     });
 
-    return response.choices[0]?.message?.content || "Unable to generate insights";
+    const content = response.choices[0]?.message?.content;
+    return typeof content === 'string' ? content : (Array.isArray(content) ? content.map(c => 'text' in c ? c.text : '').join('') : "Unable to generate insights");
   } catch (error) {
     console.error("Cost analysis error:", error);
     return "AI analysis unavailable";
@@ -253,7 +254,7 @@ export const costOptimizerRouter = router({
     .input(z.object({
       provider: z.string().optional(),
       resourceType: z.string().optional(),
-      tags: z.record(z.string()).optional(),
+      tags: z.record(z.string(), z.string()).optional(),
     }).optional())
     .query(({ input }) => {
       let result = Array.from(costRecords.values());
@@ -340,7 +341,7 @@ export const costOptimizerRouter = router({
       rec.status = "applied";
       
       // Update cost record if exists
-      for (const cost of costRecords.values()) {
+      for (const cost of Array.from(costRecords.values())) {
         if (cost.resourceId === rec.resourceId) {
           cost.costAmount -= rec.estimatedSavings;
           break;
@@ -390,7 +391,7 @@ export const costOptimizerRouter = router({
       currency: z.string().optional().default("USD"),
       period: z.enum(["daily", "weekly", "monthly"]),
       thresholdPercent: z.number().min(1).max(100).optional().default(80),
-      resourceFilter: z.record(z.string()).optional(),
+      resourceFilter: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(({ input }) => {
       const id = alertIdCounter++;

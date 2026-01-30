@@ -214,7 +214,8 @@ Provide:
       ]
     });
 
-    return response.choices[0]?.message?.content || "Unable to analyze findings";
+    const content = response.choices[0]?.message?.content;
+    return typeof content === 'string' ? content : (Array.isArray(content) ? content.map(c => 'text' in c ? c.text : '').join('') : "Unable to analyze findings");
   } catch (error) {
     console.error("Security analysis error:", error);
     return "AI analysis unavailable";
@@ -367,7 +368,7 @@ export const securityGuardianRouter = router({
     .query(({ input }) => {
       const allVulns: Vulnerability[] = [];
       
-      for (const scan of scans.values()) {
+      for (const scan of Array.from(scans.values())) {
         if (scan.status === "completed") {
           allVulns.push(...scan.findings);
         }
